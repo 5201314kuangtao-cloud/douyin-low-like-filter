@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "抖音低赞过滤/筛选高赞视频",
+  "version": "11.2",
+  "description": "刷抖音自动跳过低赞视频\n可自定义 女生 / 直播 / 音乐不跳过\n保护你的注意力。",
+  "content_scripts": [
+    {
+      "matches": ["https://www.douyin.com/*", "https://*.douyin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
