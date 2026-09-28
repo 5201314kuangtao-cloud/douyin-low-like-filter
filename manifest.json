@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "抖音低赞过滤/筛选高赞视频",
-  "version": "14.3.0",
-  "description": "刷抖音自动跳过低赞视频\n可自定义 女生 / 直播 / 音乐不跳过\n保护你的注意力。",
+  "version": "15.0.0",
+  "description": "刷抖音自动跳过低赞视频\n可自定义 女生 / 直播 / 音乐不跳过\n滑块调阈值 · 时间账本记录为你省下的每一分钟\n保护你的注意力。",
   "content_scripts": [
     {
       "matches": [

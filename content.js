@@ -3,12 +3,12 @@
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
-  // v14.3：精简 + 稳定性（v14.2 的 bugfix 全部保留）
-  //   1) 按需求移除"广告跳过/跳过带货"按钮及全部相关代码：广告分支本就不可达，
-  //      AD_RE/hasAdMarker/vidAdCache/adSkipped 一并删除；带货恢复 v14.1 的无条件跳过
-  //   2) goNext 失败重试上限：同一 vid 连续跳转失败 3 次后不再重试，避免检测+跳转死循环空转
-  //   3) feed 容器全文只序列化一次：isLiveFast 与"汽水音乐"判定共用 _rawText
-  //   4) 删除死代码：defaultZoom()（从未调用）、.ft2/.cpy 与 .dark-text 死 CSS
+  // v15.0：产品化重设计（v14.x 全部修复保留，引擎不动）
+  //   1) 阈值九宫格 → 十档滑块（1千~100万，1-2-5 对数序列），面板更瘦更精致
+  //   2) 时间账本：本次观看时长（仅前台可见时间）+ 今日/累计节省时长（每次跳过保守计 20s），
+  //      持久化到 localStorage(dyhlf_time)，跨会话累计，跨日自动清零"今日"
+  //   3) 体验细节：面板入场动画、按钮按压反馈、标题悬停显示快捷键、连跳模式状态标注
+  //   4) BASE_H 随新布局调整；"清除程序"连同时间账本一起清除
   try { document.getElementById('dy')?.remove(); } catch (e) {}
   try { document.getElementById('dy-fab')?.remove(); } catch (e) {}
   try {
@@ -48,6 +48,17 @@
     }, 300);
   }
 
+  // v15.0：阈值十档（1-2-5 对数序列），滑块 index -> 赞数
+  const THRESHOLD_PRESETS = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
+  function presetIndex(v) {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < THRESHOLD_PRESETS.length; i++) {
+      const d = Math.abs(THRESHOLD_PRESETS[i] - v);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
   const LIKE_EXACT_MS = 200;
   const LIKE_HEURISTIC_MS = 300;
   const TICK_FAST = 50;
@@ -56,6 +67,40 @@
   const JDONE_MAX = 500;
   // v14.1：vid 级缓存 TTL，过期后允许重扫，兜底 DOM 稳定性判定失手的情况
   const VID_CACHE_TTL = 2000;
+
+  // ============ v15.0：时间账本 ============
+  const AVG_SKIP_SEC = 20; // 每跳过一个视频保守估计节省的秒数
+  const _todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+  let _savedSec = 0;      // 本次会话节省（秒）
+  let _visibleMs = 0;     // 本次会话前台可见时长
+  let _lastTickAt = performance.now();
+  let _lastMinMark = -1;
+  let _timeStats = { day: _todayStr(), today: 0, total: 0 };
+  try {
+    const _t = JSON.parse(localStorage.getItem('dyhlf_time') || 'null');
+    if (_t && typeof _t.total === 'number') {
+      _timeStats.total = _t.total;
+      _timeStats.today = (_t.day === _timeStats.day) ? (_t.today || 0) : 0; // 跨日清零"今日"
+    }
+  } catch (e) {}
+  let _saveTimeT = null;
+  function saveTimeStats() {
+    clearTimeout(_saveTimeT);
+    _saveTimeT = setTimeout(() => {
+      try { localStorage.setItem('dyhlf_time', JSON.stringify(_timeStats)); } catch (e) {}
+    }, 500);
+  }
+  function addSaved(sec) {
+    _savedSec += sec;
+    _timeStats.today += sec;
+    _timeStats.total += sec;
+    saveTimeStats();
+  }
+  function fmtDur(sec) {
+    if (sec < 60) return sec + '秒';
+    if (sec < 3600) return Math.floor(sec / 60) + '分钟';
+    return (sec / 3600).toFixed(1) + '小时';
+  }
 
   const state = {
     activeVid: null,
@@ -556,6 +601,7 @@
       }
       if (cfg.autoSkip) {
         state.skipped++; state.consecutiveSkips++;
+        addSaved(AVG_SKIP_SEC); // v15.0：时间账本
         markDirty();
         const ok = await goNext(vid, token);
         if (ok) {
@@ -586,6 +632,12 @@
   let _failVid = null;     // v14.3：goNext 失败重试追踪
   let _failStreak = 0;
   function tick() {
+    // v15.0：前台可见时长累计（隐藏时不计）；跨分钟刷新时间账本显示
+    const _nowT = performance.now();
+    if (!document.hidden) _visibleMs += _nowT - _lastTickAt;
+    _lastTickAt = _nowT;
+    const _mins = Math.floor(_visibleMs / 60000);
+    if (_mins !== _lastMinMark) { _lastMinMark = _mins; markDirty(); }
     if (document.hidden) {
       _tickTimer = setTimeout(tick, 500);
       return;
@@ -647,10 +699,10 @@
   onDoc('wheel', onWheel, {capture:true, passive:true});
   onDoc('click', onClick, true);
 
-  // ============ UI v14.3 ============
+  // ============ UI v15.0 ============
   const style = document.createElement('style');
   style.textContent = `/*dyhlf-v14.3*/
-#dy{--ac:#FF1744;--ac-b:rgba(255,23,68,.5);--ac-bg:rgba(255,23,68,.28);position:fixed;left:20px;top:90px;width:200px;z-index:2147483647;background:rgba(17,18,21,.06);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);border-radius:18px;font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#fff;overflow:hidden;user-select:none;box-shadow:0 20px 60px rgba(0,0,0,.55);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;zoom:1}
+#dy{--ac:#FF1744;--ac-b:rgba(255,23,68,.5);--ac-bg:rgba(255,23,68,.28);position:fixed;left:20px;top:90px;width:200px;z-index:2147483647;background:rgba(17,18,21,.06);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);border-radius:18px;font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#fff;overflow:hidden;user-select:none;box-shadow:0 20px 60px rgba(0,0,0,.55);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;zoom:1;animation:dyIn .18s cubic-bezier(.2,.8,.3,1)}
 #dy .hd{padding:14px 14px 10px;display:flex;justify-content:space-between;align-items:center}
 #dy .rs{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;z-index:5;background:none;opacity:0}
 #dy .hd .t{font-size:15px;font-weight:500;letter-spacing:.3px;line-height:1;color:#fff;white-space:nowrap;flex:none;overflow:hidden;text-overflow:ellipsis;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;display:flex;align-items:center;height:18px;cursor:default;position:relative;top:0}
@@ -669,14 +721,21 @@
 #dy .tm i{width:10px;height:10px;border-radius:50%;cursor:pointer;border:1px solid transparent;transition:transform .15s,border-color .15s,box-shadow .15s}
 #dy .tm i:hover{transform:scale(1.2)}
 #dy .tm i.on{border-color:#fff;transform:scale(1.15);box-shadow:none}
-#dy .th{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px}
-#dy .th button{height:26px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#c8c8cd;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
-#dy .th button:hover{color:#fff}
-#dy .th button.on{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.35);color:var(--ac);font-weight:500}
+#dy .slw{margin-bottom:10px}
+#dy .slh{display:flex;justify-content:space-between;align-items:baseline}
+#dy .slh .lb{font-size:12px;color:#c8c8cd}
+#dy .slh .vl{font-size:13px;font-weight:600;color:var(--ac);-webkit-font-smoothing:antialiased}
+#dy .sl{-webkit-appearance:none;appearance:none;display:block;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,.18);outline:none;margin:7px 0 3px;cursor:pointer}
+#dy .sl::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 5px rgba(0,0,0,.45);cursor:pointer;transition:transform .12s}
+#dy .sl::-webkit-slider-thumb:hover{transform:scale(1.18)}
+#dy .sl::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 5px rgba(0,0,0,.45);cursor:pointer}
+#dy .sle{display:flex;justify-content:space-between;font-size:10px;color:#7a7a80;margin-top:1px}
+#dy .time{font-size:11px;color:#8a8a90;text-align:center;margin-top:7px;letter-spacing:.2px;white-space:nowrap}
 #dy .rg{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px}
 #dy .rg button{height:28px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#c8c8cd;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
 #dy .rg button:hover{color:#fff}
 #dy .rg button.on{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.35);color:var(--ac);font-weight:500}
+#dy .rg button:active{transform:scale(.95)}
 #dy .st{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;margin-bottom:8px}
 #dy .st .m{font-size:18px;font-weight:700;line-height:1.2;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
 #dy .st .s{font-size:12px;color:#c0c0c4;margin-top:3px}
@@ -686,28 +745,23 @@
 #dy .nm .v{font-size:16px;font-weight:700;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
 #dy .nm .l{font-size:11px;color:#c0c0c4;margin-top:2px;font-weight:500}
 #dy-fab{display:none;position:fixed;left:20px;top:90px;z-index:2147483647;width:36px;height:36px;border-radius:50%;background:#2d6a4f;border:0;color:#fff;font-size:13px;cursor:pointer}
+@keyframes dyIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
 `;
   document.head.appendChild(style);
   const panel = document.createElement('div');
   panel.id = 'dy';
   panel.innerHTML = `
 <div class="hd" id="dd">
-    <span class="t">别做算法里的困兽</span>
+    <span class="t" title="快捷键：W/上滚 回看 · S/下滚 继续 · 空格 暂停/继续&#10;点击标题或版本号可重启脚本">别做算法里的困兽</span>
   <div class="hact">
     <div class="sw on" id="run" title="开始/停止"></div>
   </div>
 </div>
 <div class="bd">
-  <div class="th" id="thg">
-    <button data-v="10000">1万</button>
-    <button data-v="20000">2万</button>
-    <button data-v="50000">5万</button>
-    <button data-v="100000">10万</button>
-    <button data-v="200000">20万</button>
-    <button data-v="300000">30万</button>
-    <button data-v="400000">40万</button>
-    <button data-v="500000">50万</button>
-    <button data-v="1000000">100万</button>
+  <div class="slw">
+    <div class="slh"><span class="lb">赞数阈值</span><span class="vl" id="slv">≥2万</span></div>
+    <input type="range" class="sl" id="sl" min="0" max="9" step="1" aria-label="赞数阈值">
+    <div class="sle"><span>1千</span><span>100万</span></div>
   </div>
   <div class="rg">
     <button id="rfem">颜值保留</button>
@@ -725,6 +779,7 @@
     <div><div class="v cb" id="nl">0</div><div class="l">直播</div></div>
     <div><div class="v cp" id="nf">0</div><div class="l">女生</div></div>
   </div>
+  <div class="time" id="trow"></div>
   <div class="ft">
     <div class="cls" id="dy-cls">清除程序</div>
     <div class="tm" id="tm">
@@ -732,7 +787,7 @@
       <i data-c="21,101,255" data-hex="#1565FF" style="background:#1565FF"></i>
       <i data-c="44,232,160" data-hex="#2CE8A0" style="background:#2CE8A0"></i>
     </div>
-    <div class="ver">v14.3</div>
+    <div class="ver">v15.0</div>
   </div>
   <div class="rs" id="dy-rs"></div>
 </div>`;
@@ -793,14 +848,32 @@ const fab = document.createElement('button');
     rfem: document.getElementById('rfem'),
     rmus: document.getElementById('rmus'),
     rj: document.getElementById('rj'),
+    sl: document.getElementById('sl'),
+    slv: document.getElementById('slv'),
+    trow: document.getElementById('trow'),
     nk: document.getElementById('nk'),
     ns: document.getElementById('ns'),
     nl: document.getElementById('nl'),
     nf: document.getElementById('nf'),
     sm: document.getElementById('sm'),
     ss: document.getElementById('ss'),
-    thg: document.getElementById('thg'),
   };
+
+  // v15.0：阈值滑块（十档 1-2-5 对数序列），替代九宫格
+  function fmtThreshold(v){return v>=10000?(v/10000)+'万':v>=1000?(v/1000)+'千':String(v);}
+  function paintSlider(){
+    const p = ($.sl.value / (THRESHOLD_PRESETS.length - 1)) * 100;
+    $.sl.style.background = 'linear-gradient(90deg, var(--ac) ' + p + '%, rgba(255,255,255,.18) ' + p + '%)';
+  }
+  function applyThreshold(i){
+    cfg.threshold = THRESHOLD_PRESETS[i] || cfg.threshold;
+    $.slv.textContent = '≥' + fmtThreshold(cfg.threshold);
+    saveCfg(); invalidate(); markDirty(); render();
+  }
+  $.sl.value = presetIndex(cfg.threshold);
+  $.slv.textContent = '≥' + fmtThreshold(cfg.threshold);
+  paintSlider();
+  $.sl.addEventListener('input', () => { applyThreshold(+$.sl.value); paintSlider(); });
 
   const findLogo = () => [...document.querySelectorAll('a')].find(a => /^(https?:)?\/\/www\.douyin\.com\//i.test(a.getAttribute('href') || ''));
   function pinToLogo(){
@@ -921,7 +994,6 @@ const fab = document.createElement('button');
     $.rfem.classList.toggle('on',cfg.keepFemale);
     $.rmus.classList.toggle('on',cfg.keepMusic);
     $.rj.classList.toggle('on',cfg.autoJ);
-    $.thg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.v===cfg.threshold));
   }
   // v14.1：脏标记保留（避免每次 tick 都刷 UI），但所有 state 变更处都补了 markDirty()
   let _dirty = true;
@@ -934,6 +1006,8 @@ const fab = document.createElement('button');
     $.ns.textContent=state.skipped;
     $.nl.textContent=state.liveSkipped;
     $.nf.textContent=state.femaleKept;
+    // v15.0：时间账本行（每分钟由 tick 触发刷新，跳过时也触发）
+    $.trow.textContent = '本次 ' + fmtDur(Math.floor(_visibleMs/1000)) + ' · 为你省下 今日 ' + fmtDur(_timeStats.today) + ' / 累计 ' + fmtDur(_timeStats.total);
     const r=state.lastResult||{};
     if(commentsOpen()){$.sm.className='m cy';$.sm.textContent='评论中';$.ss.textContent='自动刷已暂停';return;}
     if(state.authorPage){$.sm.className='m cp';$.sm.textContent='主页';$.ss.textContent='';return;}
@@ -960,7 +1034,6 @@ const fab = document.createElement('button');
   $.rfem.onclick=()=>toggleOpt('keepFemale',true);
   $.rmus.onclick=()=>toggleOpt('keepMusic',true);
   $.rj.onclick=()=>toggleOpt('autoJ',false);
-  $.thg.querySelectorAll('button').forEach(b=>{b.onclick=()=>{cfg.threshold=+b.dataset.v;saveCfg();markDirty();render();};});
   const _applyTheme = (c, persist) => {
     const hex = document.querySelector('#tm i[data-c="' + c + '"]')?.dataset.hex || '#' + c;
     panel.style.setProperty('--ac', hex);
@@ -978,7 +1051,7 @@ const fab = document.createElement('button');
 
   (()=>{
     const rs=document.getElementById('dy-rs');let d=false;
-    const BASE_H = 406;
+    const BASE_H = 360;
     const BASE_W = 200;
     const MIN_Z = 0.6;
     const maxZoom = () => Math.min((vh - 8) / BASE_H, (vw - 8) / BASE_W);
@@ -1013,7 +1086,7 @@ const fab = document.createElement('button');
   const _dyClear = () => {
     try { window.__dyhlf?.stop(); } catch(e){}
     // v14.2：补删 dyhlf_open / dyhlf_fab
-    try { ['dyhlf_cfg','dyhlf_pp','dyhlf_theme','dyhlf_zoom','dyhlf_open','dyhlf_fab'].forEach(k => localStorage.removeItem(k)); } catch(e){}
+    try { ['dyhlf_cfg','dyhlf_pp','dyhlf_theme','dyhlf_zoom','dyhlf_open','dyhlf_fab','dyhlf_time'].forEach(k => localStorage.removeItem(k)); } catch(e){}
     try { document.getElementById('dy')?.remove(); } catch(e){}
     try { document.getElementById('dy-fab')?.remove(); } catch(e){}
   };
@@ -1063,6 +1136,7 @@ const fab = document.createElement('button');
       _stopped = true;
       clearTimeout(_tickTimer);   // v14.1：停掉自调度的 tick
       clearTimeout(_saveT);
+      clearTimeout(_saveTimeT);   // v15.0：时间账本防抖写盘
       // v14.2：清理 fab 吸附重试定时器
       while (_pinTimers.length) clearTimeout(_pinTimers.pop());
       invalidate();
@@ -1071,5 +1145,5 @@ const fab = document.createElement('button');
       _uiObs.disconnect();
       panel.remove();fab.remove();style.remove();window.__dyhlf=null;
     }};
-  console.log('[FILTER v14.3] loaded');
+  console.log('[FILTER v15.0] loaded');
 })();
