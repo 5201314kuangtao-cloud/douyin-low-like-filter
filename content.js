@@ -3,7 +3,7 @@
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
-  // v14.0：底层性能优化，框架不变
+  // v14.1：底层性能优化，框架不变
   //   1) norm/parseCount 正则全部预编译
   //   2) isAuthorPage innerText->textContent，避免 forced reflow
   //   3) readHeuristicLike 改 TreeWalker，只遍历叶子文本
@@ -46,7 +46,7 @@
   const TICK_IDLE = 200;
   const HIST_MAX = 200;
   const JDONE_MAX = 500;
-  // v14.0：vid 级缓存 TTL，过期后允许重扫，兜底 DOM 稳定性判定失手的情况
+  // v14.1：vid 级缓存 TTL，过期后允许重扫，兜底 DOM 稳定性判定失手的情况
   const VID_CACHE_TTL = 2000;
 
   const state = {
@@ -65,7 +65,7 @@
     hitWord: null
   };
   const hist = [];
-  // v14.0：Map<vid, count>，处理同一 vid 在 hist 中出现多次的情况
+  // v14.1：Map<vid, count>，处理同一 vid 在 hist 中出现多次的情况
   const histCount = new Map();
   const histPos = new Map(); // vid -> last index in hist
   const jDone = new Set();
@@ -90,7 +90,7 @@
   let vw = innerWidth, vh = innerHeight;
   // resize handled later with placePanel
 
-  // v14.0：vid 级缓存改为 {val, at} 结构，带 TTL
+  // v14.1：vid 级缓存改为 {val, at} 结构，带 TTL
   const vidLiveCache = new Map();
   const vidShopCache = new Map();
   const vidAdCache = new Map();
@@ -160,8 +160,7 @@
   }
   function visible(el) {
     if (!el?.getBoundingClientRect) return false;
-    // offsetParent 为 null 且不是 fixed 元素 = 不可见，快速排除
-    if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false;
+    if (!el.offsetParent) return false;
     const r = el.getBoundingClientRect();
     return r.width >= 3 && r.height >= 3;
   }
@@ -232,7 +231,7 @@
     return vid;
   }
 
-  // v14.0：isLiveFast 加"稳定性门控"——DOM 未稳定时不写缓存，让下次 tick 重扫
+  // v14.1：isLiveFast 加"稳定性门控"——DOM 未稳定时不写缓存，让下次 tick 重扫
   function isLiveFast(it = activeItem(), vid = currentVid()) {
     if (!it) return false;
     const cached = cacheGet(vidLiveCache, vid);
@@ -357,7 +356,7 @@
   }
 
   const AD_RE = /广告|旗舰店|火山引擎|种草|带货|橱窗|小黄车|购物车|下单|购买|点击链接|链接在|商品|同款|专卖店|清仓|工厂直销|源头工厂|货源|批发|加盟|代理|优惠券|折扣|秒杀|专场直播|购物|查看详情|爆款|爆卖|销量|已售|限时特惠/;
-  // v14.0：hasAdMarker 也加稳定性门控 + TTL
+  // v14.1：hasAdMarker 也加稳定性门控 + TTL
   function hasAdMarker(it = activeItem(), vid = currentVid()) {
     if (!it) return false;
     const cached = cacheGet(vidAdCache, vid);
@@ -401,7 +400,7 @@
     return found;
   }
   const SHOP_RE = /购物|商品|橱窗|小黄车|旗舰店|专卖店|视频同款|游戏推广|下单|点击购买|去购买/;
-  // v14.0：hasGameShoppingMarker 也加稳定性门控 + TTL
+  // v14.1：hasGameShoppingMarker 也加稳定性门控 + TTL
   function hasGameShoppingMarker(it = activeItem(), vid = currentVid()) {
     if (!it) return false;
     const cached = cacheGet(vidShopCache, vid);
@@ -430,12 +429,12 @@
     if (stable) cacheSet(vidShopCache, vid, result);
     return result;
   }
-  // v14.0：补回 v11.2 里被删掉的词（大小姐/欧美唇/唇膜/唇冻/唇霜/唇乳/唇粉）
+  // v14.1：补回 v11.2 里被删掉的词（大小姐/欧美唇/唇膜/唇冻/唇霜/唇乳/唇粉）
   const FEMALE_HOT = new Set(['美女','女生','小姐姐','女神','甜妹','辣妹','穿搭','美妆','舞蹈','自拍','颜值','JK','校园','学姐','学妹','女高','女大','女团','白丝','清纯','变装','氛围感','口红','美甲','护肤','翻唱','对口型','宿舍','教室']);
   const FEMALE_RE = /女孩|妹子|萌妹|软妹|熟女|御姐|萝莉|少女|妹妹|高中|初中|大学|校花|初恋|纯欲|仙女|女友|老婆|大小姐|闺蜜|姐妹|妆容|化妆|素颜|随拍|对镜拍|OOTD|韩系|韩妹|日系|lo裙|洛丽塔|汉服|模特|主播|好看的|漂亮|跳舞|手势舞|长发|卷发|温柔|唱歌|弹唱|理想型|宅女|恋爱|女初|女爱豆|女偶像|女歌手|辣妈|宝妈|旗袍|婚纱|女生日常|甜妹风|御姐风|纯欲风|女生头像|闺蜜照|姐妹照|女生穿搭|辣妹风|温柔风|甜美风|仙女风|初恋风|校园风|学院风|JK制服|连衣裙|短裙|吊带|露肩|大长腿|马甲线|小蛮腰|锁骨|天鹅颈|直角肩|漫画腿|蚂蚁腰|A4腰|酒窝|梨涡|虎牙|卧蚕|双眼皮|高鼻梁|嘟嘟唇|微笑唇|素颜妆|伪素颜|纯欲妆|甜辣妆|清冷妆|氛围感妆|白开水妆|裸妆|淡妆|仙子毛|漫画睫毛|野生眉|平眉|挑眉|柳叶眉|鼻影|修容|高光|腮红|欧美唇|唇釉|唇泥|镜面唇釉|哑光唇釉|丝绒唇釉|水光唇|玻璃唇|果冻唇|咬唇妆|渐变唇|花瓣唇|樱桃小嘴|丰唇|唇珠|唇膜|唇部护理|唇油|唇蜜|唇彩|唇冻|唇霜|唇乳|唇粉/;
-  function matchFemale(it = activeItem()) {
+  function matchFemale(it = activeItem(), preText) {
     if (!it) return null;
-    const t = norm(getNickname(it) + ' ' + getDesc(it));
+    const t = preText || norm(getNickname(it) + ' ' + getDesc(it));
     for (const w of FEMALE_HOT) {
       if (t.includes(w)) return w;
     }
@@ -500,7 +499,7 @@
     return currentVid() !== vid;
   }
 
-  // v14.0：histCount 增删辅助
+  // v14.1：histCount 增删辅助
   function histAdd(vid) {
     histCount.set(vid, (histCount.get(vid) || 0) + 1);
     histPos.set(vid, hist.length); // hist.push 之后调用，此时 hist.length-1 是新位置
@@ -540,6 +539,10 @@
       }
 
       const it = activeItem();
+      // v14.1：缓存 nickname/desc，避免下面多个函数重复查 DOM
+      const _nk = getNickname(it);
+      const _ds = getDesc(it);
+      const _fullText = norm(_nk + ' ' + _ds);
       let decision = 'unknown';
       let like = null;
       let hit = null;
@@ -550,11 +553,11 @@
         decision = 'ad';
       } else if (hasGameShoppingMarker(it, vid)) {
         decision = 'game-shopping';
-      } else if (norm(getNickname(it) + ' ' + getDesc(it)).includes('男')) {
+      } else if (_fullText.includes('男')) {
         decision = 'male-skip';
       } else if (cfg.keepMusic && (it.textContent||'').includes('汽水音乐')) {
         decision = 'music-keep';
-      } else if (cfg.keepFemale && (hit = matchFemale(it))) {
+      } else if (cfg.keepFemale && (hit = matchFemale(it, _fullText))) {
         decision = 'female-keep';
       } else {
         like = await readLikeAccurate(vid, state.consecutiveSkips>=2);
@@ -600,7 +603,7 @@
 
   let _tickDelay = TICK_FAST;
   let _sameVidCount = 0;
-  let _tickTimer = null;   // v14.0：跟踪 setTimeout 句柄，stop() 时可清理
+  let _tickTimer = null;   // v14.1：跟踪 setTimeout 句柄，stop() 时可清理
   function tick() {
     if (document.hidden) {
       _tickTimer = setTimeout(tick, 500);
@@ -645,10 +648,13 @@
     if (key==='s' || e.key==='ArrowDown' || e.key==='PageDown') { exitUserBack(); return; }
     if (e.code==='Space' || e.key===' ') { userPauseMode = !userPauseMode; markDirty(); return; }
   }
+  let _lastWheel = 0;
   function onWheel(e) {
     if (syntheticDepth > 0) return;
-    if (e.deltaY < -10) enterUserBack();
-    else if (e.deltaY > 10) exitUserBack();
+    const now = performance.now();
+    if (now - _lastWheel < 500) return;
+    if (e.deltaY < -10) { _lastWheel = now; enterUserBack(); }
+    else if (e.deltaY > 10) { _lastWheel = now; exitUserBack(); }
   }
   function onClick(e) {
     if (syntheticDepth > 0) return;
@@ -659,7 +665,7 @@
   document.addEventListener('wheel', onWheel, {capture:true, passive:true});
   document.addEventListener('click', onClick, true);
 
-  // ============ UI v14.0 ============
+  // ============ UI v14.1 ============
   const style = document.createElement('style');
   style.textContent = `
 #dy{--ac:#FF1744;--ac-b:rgba(255,23,68,.5);--ac-bg:rgba(255,23,68,.28);position:fixed;left:20px;top:90px;width:200px;z-index:2147483647;background:rgba(17,18,21,.06);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);border-radius:18px;font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#fff;overflow:hidden;user-select:none;box-shadow:0 20px 60px rgba(0,0,0,.55);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;zoom:1}
@@ -748,7 +754,7 @@
       <i data-c="21,101,255" data-hex="#1565FF" style="background:#1565FF"></i>
       <i data-c="44,232,160" data-hex="#2CE8A0" style="background:#2CE8A0"></i>
     </div>
-    <div class="ver">v14.0</div>
+    <div class="ver">v14.1</div>
   </div>
   <div class="rs" id="dy-rs"></div>
 </div>`;
@@ -760,7 +766,7 @@ const fab = document.createElement('button');
   fab.style.boxShadow = '0 4px 14px rgba(0,0,0,.4)';
   fab.style.display = 'block';
   document.body.appendChild(fab);
-  // v14.0：启动时恢复面板位置、zoom、fab位置、打开状态
+  // v14.1：启动时恢复面板位置、zoom、fab位置、打开状态
   function restorePanelLayout() {
     try {
       const pp = JSON.parse(localStorage.getItem('dyhlf_pp') || 'null');
@@ -848,7 +854,7 @@ const fab = document.createElement('button');
     return true;
   }
   (()=>{
-    // v14.0：如果用户自定义过 fab 位置，不自动吸到 logo
+    // v14.1：如果用户自定义过 fab 位置，不自动吸到 logo
     if (fab.dataset.customPos === '1') return;
     const tryPin = (tries) => {
       if (pinToLogo()) return;
@@ -937,7 +943,7 @@ const fab = document.createElement('button');
     $.rj.classList.toggle('on',cfg.autoJ);
     $.thg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.v===cfg.threshold));
   }
-  // v14.0：脏标记保留（避免每次 tick 都刷 UI），但所有 state 变更处都补了 markDirty()
+  // v14.1：脏标记保留（避免每次 tick 都刷 UI），但所有 state 变更处都补了 markDirty()
   let _dirty = true;
   function markDirty(){ _dirty = true; }
   function render(){
@@ -1015,7 +1021,7 @@ const fab = document.createElement('button');
       panel.style.top = (anchorVis.t / z) + 'px';
     });
     document.addEventListener('mouseup',()=>{if(d){d=false;anchorVis=null;const _z=parseFloat(panel.style.zoom);panel.dataset.userZoom=_z;try{localStorage.setItem('dyhlf_zoom',String(_z));}catch(e){}}});
-    // v14.0：resize 时不重置 zoom，只重新调整面板位置
+    // v14.1：resize 时不重置 zoom，只重新调整面板位置
     window.addEventListener('resize', () => {
       vw = innerWidth; vh = innerHeight;
       if (panel.style.display !== 'none') placePanel();
@@ -1075,7 +1081,7 @@ const fab = document.createElement('button');
   window.__dyhlf={cfg,state,getState(){return{...state,threshold:cfg.threshold,enabled:cfg.enabled,vid:currentVid()};},
     stop(){
       cfg.enabled=false;
-      clearTimeout(_tickTimer);   // v14.0：停掉自调度的 tick
+      clearTimeout(_tickTimer);   // v14.1：停掉自调度的 tick
       clearTimeout(_saveT);
       invalidate();
       document.removeEventListener('keydown',onKey,true);
@@ -1084,5 +1090,5 @@ const fab = document.createElement('button');
       _uiObs.disconnect();
       panel.remove();fab.remove();style.remove();window.__dyhlf=null;
     }};
-  console.log('[FILTER v14.0] loaded');
+  console.log('[FILTER v14.1] loaded');
 })();
