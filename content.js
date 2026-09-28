@@ -3,24 +3,32 @@
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
-  // v14.1：底层性能优化，框架不变
-  //   1) norm/parseCount 正则全部预编译
-  //   2) isAuthorPage innerText->textContent，避免 forced reflow
-  //   3) readHeuristicLike 改 TreeWalker，只遍历叶子文本
-  //   4) hasAdMarker/hasGameShoppingMarker fallback 改 TreeWalker
-  //   5) histDel 补 histPos 清理，防 Map 泄漏
+  // v14.3：精简 + 稳定性（v14.2 的 bugfix 全部保留）
+  //   1) 按需求移除"广告跳过/跳过带货"按钮及全部相关代码：广告分支本就不可达，
+  //      AD_RE/hasAdMarker/vidAdCache/adSkipped 一并删除；带货恢复 v14.1 的无条件跳过
+  //   2) goNext 失败重试上限：同一 vid 连续跳转失败 3 次后不再重试，避免检测+跳转死循环空转
+  //   3) feed 容器全文只序列化一次：isLiveFast 与"汽水音乐"判定共用 _rawText
+  //   4) 删除死代码：defaultZoom()（从未调用）、.ft2/.cpy 与 .dark-text 死 CSS
   try { document.getElementById('dy')?.remove(); } catch (e) {}
   try { document.getElementById('dy-fab')?.remove(); } catch (e) {}
   try {
     document.querySelectorAll('style').forEach(el => {
-      if (el.textContent && el.textContent.includes('#dy-fab{')) el.remove();
+      if (el.textContent && (el.textContent.includes('#dy-fab{') || el.textContent.includes('/*dyhlf'))) el.remove();
     });
+  } catch (e) {}
+  // v14.2：拉取自身源码，供 _dyRestart 热重启（此前 __dySrc 无人赋值，重启是死功能）
+  try {
+    if (window.__dySrc == null && typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+      fetch(chrome.runtime.getURL('content.js'))
+        .then(r => { if (r.ok) return r.text(); })
+        .then(src => { if (src && src.length > 1000) window.__dySrc = src; })
+        .catch(() => {});
+    }
   } catch (e) {}
   const cfg = {
     enabled: true,
     autoSkip: true,
     skipLive: true,
-    skipAd: false,
     keepFemale: true,
     keepMusic: true,
     autoJ: false,
@@ -57,7 +65,6 @@
     liveSkipped: 0,
     unknown: 0,
     femaleKept: 0,
-    adSkipped: 0,
     userBack: 0,
     authorPage: false,
     lastResult: null,
@@ -65,8 +72,6 @@
     hitWord: null
   };
   const hist = [];
-  // v14.1：Map<vid, count>，处理同一 vid 在 hist 中出现多次的情况
-  const histCount = new Map();
   const histPos = new Map(); // vid -> last index in hist
   const jDone = new Set();
   let hidx = -1;
@@ -74,14 +79,20 @@
   let userBackMode = false;
   let userPauseMode = false;
   let syntheticDepth = 0;
-  let strongBack = false;
-  let weakBack = false;
+  // v14.2：strongBack/weakBack 始终同值，合并为 backArmed（原 weakBack 分支恒为死代码）
+  let backArmed = false;
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const withSynthetic = fn => {
     syntheticDepth++;
     try { return fn(); } finally { syntheticDepth--; }
   };
+
+  // v14.2：统一登记 document/window 级监听，stop() 一次性清理
+  const _disposers = [];
+  const onDoc = (type, fn, opts) => { document.addEventListener(type, fn, opts); _disposers.push(() => document.removeEventListener(type, fn, opts)); };
+  const onWin = (type, fn, opts) => { window.addEventListener(type, fn, opts); _disposers.push(() => window.removeEventListener(type, fn, opts)); };
+  let _stopped = false;
 
   let activeItemCache = null;
   let activeItemCacheAt = 0;
@@ -93,7 +104,6 @@
   // v14.1：vid 级缓存改为 {val, at} 结构，带 TTL
   const vidLiveCache = new Map();
   const vidShopCache = new Map();
-  const vidAdCache = new Map();
   function cacheGet(map, vid) {
     const c = map.get(vid);
     if (!c) return null;
@@ -106,6 +116,7 @@
       const it = map.keys().next();
       if (!it.done) map.delete(it.value);
     }
+    map.delete(vid); // v14.2：先删再插，刷新插入序，避免淘汰刚更新过的条目
     map.set(vid, { val, at: performance.now() });
   }
 
@@ -117,7 +128,6 @@
     vidCacheAt = 0;
     vidLiveCache.clear();
     vidShopCache.clear();
-    vidAdCache.clear();
   };
   const norm = s => String(s || '').replace(/[\s\u00a0\u200b\u200c\u200d]/g, '');
   const commentsCache = { at: 0, val: false };
@@ -139,7 +149,8 @@
   function isAuthorPage() {
     const p = location.pathname || '/';
     const now = performance.now();
-    if (authorPageCache.path === p && now - authorPageCache.at < 400) return authorPageCache.val;
+    // v14.2：负结果（非作者页）拉长缓存到 2.5s，避免频繁全量 body.textContent
+    if (authorPageCache.path === p && now - authorPageCache.at < (authorPageCache.val ? 400 : 2500)) return authorPageCache.val;
     let val = /^\/(user|profile|author|@)/i.test(p);
     if (!val) {
       const t = document.body.textContent || '';
@@ -191,6 +202,7 @@
           if (a > fallbackArea && a <= vw * vh * 1.25) { best = p; fallbackArea = a; }
           p = p.parentElement;
         }
+        if (best) area = fallbackArea; // v14.2：兜底命中时同步 area，否则下方判定恒为 null
         break;
       }
     }
@@ -232,11 +244,12 @@
   }
 
   // v14.1：isLiveFast 加"稳定性门控"——DOM 未稳定时不写缓存，让下次 tick 重扫
-  function isLiveFast(it = activeItem(), vid = currentVid()) {
+  // v14.3：新增 preText 参数，由调用方传入一次性序列化的 feed 全文，避免重复 textContent
+  function isLiveFast(it = activeItem(), vid = currentVid(), preText) {
     if (!it) return false;
     const cached = cacheGet(vidLiveCache, vid);
     if (cached !== null) return cached;
-    const text = (it.textContent || '').replace(/\s+/g,'');
+    const text = (preText != null ? preText : (it.textContent || '')).replace(/\s+/g,'');
     let result, stable = true;
     if (text.includes('进入直播间') || text.includes('点击进入直播')) {
       result = true;
@@ -355,50 +368,7 @@
     return null;
   }
 
-  const AD_RE = /广告|旗舰店|火山引擎|种草|带货|橱窗|小黄车|购物车|下单|购买|点击链接|链接在|商品|同款|专卖店|清仓|工厂直销|源头工厂|货源|批发|加盟|代理|优惠券|折扣|秒杀|专场直播|购物|查看详情|爆款|爆卖|销量|已售|限时特惠/;
-  // v14.1：hasAdMarker 也加稳定性门控 + TTL
-  function hasAdMarker(it = activeItem(), vid = currentVid()) {
-    if (!it) return false;
-    const cached = cacheGet(vidAdCache, vid);
-    if (cached !== null) return cached;
-    const name = norm(getNickname(it));
-    const desc = norm(getDesc(it));
-    if (AD_RE.test(name) || AD_RE.test(desc)) {
-      // 昵称/描述命中是强证据，可缓存
-      cacheSet(vidAdCache, vid, true);
-      return true;
-    }
-    let found = false, stable = true;
-    const base = it.getBoundingClientRect();
-    if (!base.width || !base.height) stable = false;
-    // TreeWalker 只遍历文本节点，比 querySelectorAll('div,span') 快 10x
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const t = (node.nodeValue || '').trim();
-        if (t !== '广告') return NodeFilter.FILTER_REJECT;
-        const el = node.parentElement;
-        if (!el || !visible(el)) return NodeFilter.FILTER_REJECT;
-        if (el.closest('#dy')) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    if (walker.nextNode()) found = true;
-    if (!found) {
-      let scanned = 0;
-      const fw = document.createTreeWalker(it, NodeFilter.SHOW_TEXT, null);
-      let fn2;
-      while ((fn2 = fw.nextNode())) {
-        const el = fn2.parentElement;
-        if (!el || !visible(el)) continue;
-        scanned++;
-        const t = (fn2.nodeValue || '').trim();
-        if (/查看详情|爆款|爆卖|已售|销量|限时/.test(t) && t.length < 15) { found = true; break; }
-      }
-      if (scanned < 3) stable = false;
-    }
-    if (stable) cacheSet(vidAdCache, vid, found);
-    return found;
-  }
+  // v14.3：广告检测（AD_RE/hasAdMarker）已随"广告跳过"开关一并移除——该分支自 v14.1 起就不可达
   const SHOP_RE = /购物|商品|橱窗|小黄车|旗舰店|专卖店|视频同款|游戏推广|下单|点击购买|去购买/;
   // v14.1：hasGameShoppingMarker 也加稳定性门控 + TTL
   function hasGameShoppingMarker(it = activeItem(), vid = currentVid()) {
@@ -441,6 +411,9 @@
     const m = t.match(FEMALE_RE);
     return m ? m[0] : null;
   }
+
+  // v14.2：女性向购物语境豁免，减少 male-skip 误杀（如"送男朋友的礼物"）
+  const MALE_EXEMPT_RE = /男朋友|男友|送男|给男|适合男|男生礼物|男生的礼物|男士礼物|男同款/;
 
   const J_INIT = Object.freeze({key:'j',code:'KeyJ',keyCode:74,which:74,bubbles:true,cancelable:true,composed:true,repeat:false});
   const DOWN_INIT = Object.freeze({key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40,bubbles:true,cancelable:true});
@@ -499,16 +472,13 @@
     return currentVid() !== vid;
   }
 
-  // v14.1：histCount 增删辅助
+  // v14.2：histCount 只被死代码分支读取，已删除；位置索引统一由 rebuildHistPos 维护
   function histAdd(vid) {
-    histCount.set(vid, (histCount.get(vid) || 0) + 1);
-    histPos.set(vid, hist.length); // hist.push 之后调用，此时 hist.length-1 是新位置
+    histPos.set(vid, hist.length - 1); // push 之后调用，新元素下标是 length-1（修复 off-by-one）
   }
-  function histDel(vid) {
-    const cnt = histCount.get(vid);
-    if (cnt == null) return;
-    if (cnt <= 1) { histCount.delete(vid); histPos.delete(vid); }
-    else histCount.set(vid, cnt - 1);
+  function rebuildHistPos() {
+    histPos.clear();
+    for (let i = 0; i < hist.length; i++) histPos.set(hist[i], i);
   }
 
   async function handleNewVideo(vid) {
@@ -517,25 +487,27 @@
     const token = actionToken;
     try {
       const inTurbo = state.consecutiveSkips >= 2;
-      const isBack = strongBack || (!inTurbo && (hist[hidx-1]===vid || (weakBack && histCount.has(vid))));
+      const isBack = backArmed || (!inTurbo && hist[hidx-1]===vid);
       const isEmptyVid = !vid || vid.length < 10;
-      strongBack = false; weakBack = false;
+      backArmed = false;
       if (isBack && !isEmptyVid) {
-        hidx = histPos.has(vid) ? histPos.get(vid) : hidx;
+        // v14.2：校验 histPos 仍指向该 vid，防截断后索引失效
+        const bp = histPos.get(vid);
+        hidx = (bp != null && hist[bp] === vid) ? bp : hidx;
         state.userBack++; state.kept++;
         state.lastResult = { verdict:'userback' };
         markDirty();
         return;
       }
       if (hidx>=0 && hidx<hist.length-1) {
-        for (let i = hidx+1; i < hist.length; i++) histDel(hist[i]);
-        hist.length = hidx+1;
+        hist.length = hidx+1; // v14.2：截断后统一 rebuildHistPos 重建索引
+        rebuildHistPos();
       }
       hist.push(vid); histAdd(vid); hidx = hist.length-1;
       if (hist.length > HIST_MAX) {
-        const removed = hist.splice(0, hist.length - HIST_MAX);
-        removed.forEach(v => histDel(v));
+        hist.splice(0, hist.length - HIST_MAX);
         hidx = hist.length - 1;
+        rebuildHistPos();
       }
 
       const it = activeItem();
@@ -543,19 +515,19 @@
       const _nk = getNickname(it);
       const _ds = getDesc(it);
       const _fullText = norm(_nk + ' ' + _ds);
+      // v14.3：feed 容器全文只序列化一次，isLiveFast 与音乐判定共用
+      const _rawText = it ? (it.textContent || '') : '';
       let decision = 'unknown';
       let like = null;
       let hit = null;
 
-      if (cfg.skipLive && isLiveFast(it, vid)) {
+      if (cfg.skipLive && isLiveFast(it, vid, _rawText)) {
         decision = 'live';
-      } else if (hasAdMarker(it, vid) && cfg.skipAd) {
-        decision = 'ad';
       } else if (hasGameShoppingMarker(it, vid)) {
         decision = 'game-shopping';
-      } else if (_fullText.includes('男')) {
+      } else if (_fullText.includes('男') && !MALE_EXEMPT_RE.test(_fullText)) {
         decision = 'male-skip';
-      } else if (cfg.keepMusic && (it.textContent||'').includes('汽水音乐')) {
+      } else if (cfg.keepMusic && _rawText.includes('汽水音乐')) {
         decision = 'music-keep';
       } else if (cfg.keepFemale && (hit = matchFemale(it, _fullText))) {
         decision = 'female-keep';
@@ -567,9 +539,8 @@
         else decision = 'low';
       }
 
-      const shouldSkip = decision==='live'||decision==='ad'||decision==='game-shopping'||decision==='low'||decision==='male-skip';
+      const shouldSkip = decision==='live'||decision==='game-shopping'||decision==='low'||decision==='male-skip';
       if (decision==='live') state.liveSkipped++;
-      if (decision==='ad') state.adSkipped++;
       if (decision==='female-keep') state.femaleKept++;
       if (decision==='unknown') state.unknown++;
       state.hitWord = hit;
@@ -587,7 +558,15 @@
         state.skipped++; state.consecutiveSkips++;
         markDirty();
         const ok = await goNext(vid, token);
-        if (!ok) state.activeVid = null;
+        if (ok) {
+          _failVid = null; _failStreak = 0;
+        } else if (_failVid === vid) {
+          // v14.3：同一 vid 连续跳转失败 3 次后不再重试，避免"检测+跳转"死循环空转
+          if (++_failStreak < 3) state.activeVid = null;
+        } else {
+          _failVid = vid; _failStreak = 1;
+          state.activeVid = null;
+        }
       } else {
         state.kept++;
         markDirty();
@@ -604,17 +583,20 @@
   let _tickDelay = TICK_FAST;
   let _sameVidCount = 0;
   let _tickTimer = null;   // v14.1：跟踪 setTimeout 句柄，stop() 时可清理
+  let _failVid = null;     // v14.3：goNext 失败重试追踪
+  let _failStreak = 0;
   function tick() {
     if (document.hidden) {
       _tickTimer = setTimeout(tick, 500);
       return;
     }
     updatePageMode();
+    render(); // v14.2：消费脏标记，暂停/回看/评论态即时刷新
     if (!cfg.enabled || state.authorPage || userBackMode || userPauseMode || state.handling) {
       _tickTimer = setTimeout(tick, TICK_IDLE);
       return;
     }
-    if (commentsOpen()) { state.activeVid = null; _tickTimer = setTimeout(tick, TICK_IDLE); return; }
+    if (commentsOpen()) { state.activeVid = null; markDirty(); _tickTimer = setTimeout(tick, TICK_IDLE); return; }
     const vid = currentVid();
     if (!vid || vid === state.activeVid) {
       _sameVidCount++;
@@ -631,12 +613,12 @@
 
   function enterUserBack() {
     userBackMode = true; userPauseMode = false; invalidate();
-    state.activeVid = null; state.handling = false; strongBack = true; weakBack = true;
+    state.activeVid = null; state.handling = false; backArmed = true;
     markDirty();
   }
   function exitUserBack() {
     userBackMode = false; userPauseMode = false; invalidate();
-    state.activeVid = null; state.handling = false; strongBack = false; weakBack = false;
+    state.activeVid = null; state.handling = false; backArmed = false;
     markDirty();
   }
   function onKey(e) {
@@ -661,13 +643,13 @@
     if (!e.target?.closest?.('[data-e2e="video-switch-prev-arrow"]')) return;
     enterUserBack();
   }
-  document.addEventListener('keydown', onKey, true);
-  document.addEventListener('wheel', onWheel, {capture:true, passive:true});
-  document.addEventListener('click', onClick, true);
+  onDoc('keydown', onKey, true);
+  onDoc('wheel', onWheel, {capture:true, passive:true});
+  onDoc('click', onClick, true);
 
-  // ============ UI v14.1 ============
+  // ============ UI v14.3 ============
   const style = document.createElement('style');
-  style.textContent = `
+  style.textContent = `/*dyhlf-v14.3*/
 #dy{--ac:#FF1744;--ac-b:rgba(255,23,68,.5);--ac-bg:rgba(255,23,68,.28);position:fixed;left:20px;top:90px;width:200px;z-index:2147483647;background:rgba(17,18,21,.06);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);border-radius:18px;font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#fff;overflow:hidden;user-select:none;box-shadow:0 20px 60px rgba(0,0,0,.55);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;zoom:1}
 #dy .hd{padding:14px 14px 10px;display:flex;justify-content:space-between;align-items:center}
 #dy .rs{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;z-index:5;background:none;opacity:0}
@@ -681,12 +663,8 @@
 #dy .hact{display:flex;align-items:center;gap:8px;flex:none}
 #dy .ver{font-size:11px;color:#8a8a90}
 #dy .ft{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.08)}#dy .ft .cls{justify-self:start}#dy .ft .tm{justify-self:center}#dy .ft .ver{justify-self:end}
-#dy .ft2{display:flex;justify-content:flex-end;margin-top:4px}
 #dy .cls{font-size:11px;color:#6a6a70;cursor:pointer;letter-spacing:.5px;transition:color .15s}
 #dy .cls:hover{color:#FF4D5E}
-#dy .cpy{font-size:11px;color:#6a6a70;cursor:pointer;letter-spacing:.5px;transition:color .15s;margin-left:10px}
-#dy .cpy:hover{color:#2CE8A0}
-#dy .cpy.ok{color:#2CE8A0}
 #dy .tm{display:flex;align-items:center;gap:6px}
 #dy .tm i{width:10px;height:10px;border-radius:50%;cursor:pointer;border:1px solid transparent;transition:transform .15s,border-color .15s,box-shadow .15s}
 #dy .tm i:hover{transform:scale(1.2)}
@@ -707,7 +685,7 @@
 #dy .nm div{text-align:center;padding:6px 2px;border-radius:10px;background:rgba(255,255,255,.06)}
 #dy .nm .v{font-size:16px;font-weight:700;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
 #dy .nm .l{font-size:11px;color:#c0c0c4;margin-top:2px;font-weight:500}
-#dy.dark-text{color:#1a1a1a !important}#dy.dark-text .sw{background:rgba(0,0,0,.15)}#dy.dark-text .sw.on{background:var(--ac)}#dy-fab{display:none;position:fixed;left:20px;top:90px;z-index:2147483647;width:36px;height:36px;border-radius:50%;background:#2d6a4f;border:0;color:#fff;font-size:13px;cursor:pointer}
+#dy-fab{display:none;position:fixed;left:20px;top:90px;z-index:2147483647;width:36px;height:36px;border-radius:50%;background:#2d6a4f;border:0;color:#fff;font-size:13px;cursor:pointer}
 `;
   document.head.appendChild(style);
   const panel = document.createElement('div');
@@ -754,7 +732,7 @@
       <i data-c="21,101,255" data-hex="#1565FF" style="background:#1565FF"></i>
       <i data-c="44,232,160" data-hex="#2CE8A0" style="background:#2CE8A0"></i>
     </div>
-    <div class="ver">v14.1</div>
+    <div class="ver">v14.3</div>
   </div>
   <div class="rs" id="dy-rs"></div>
 </div>`;
@@ -853,12 +831,13 @@ const fab = document.createElement('button');
     fab.style.top = Math.max(0, noteY0) + 'px';
     return true;
   }
+  const _pinTimers = []; // v14.2：登记吸附重试定时器，stop() 清理
   (()=>{
     // v14.1：如果用户自定义过 fab 位置，不自动吸到 logo
     if (fab.dataset.customPos === '1') return;
     const tryPin = (tries) => {
       if (pinToLogo()) return;
-      if (tries > 0) setTimeout(() => tryPin(tries - 1), 300);
+      if (tries > 0) _pinTimers.push(setTimeout(() => tryPin(tries - 1), 300));
     };
     tryPin(10);
   })();
@@ -891,17 +870,18 @@ const fab = document.createElement('button');
     }
   }
   (()=>{let d=false,sx=0,sy=0,maxDev=0,fx=0,fy=0;
+    // v14.2：document 级监听走 onDoc 登记，stop() 可清理
     fab.addEventListener('mousedown',e=>{if(e.button!==0)return;
       d=true;maxDev=0;sx=e.clientX;sy=e.clientY;fx=e.clientX-fab.offsetLeft;fy=e.clientY-fab.offsetTop;
       curPress=++pressId;draggedThisPress=false;e.preventDefault();});
-    document.addEventListener('mousemove',e=>{if(!d)return;
+    onDoc('mousemove',e=>{if(!d)return;
       maxDev=Math.max(maxDev,Math.hypot(e.clientX-sx,e.clientY-sy));
       if(maxDev>2)draggedThisPress=true;
       const nx=Math.max(0,Math.min(vw-fab.offsetWidth,e.clientX-fx));
       const ny=Math.max(0,Math.min(vh-fab.offsetHeight,e.clientY-fy));
       fab.style.left=nx+'px';fab.style.top=ny+'px';
       if(panel.style.display!=='none')placePanel();});
-    document.addEventListener('mouseup',()=>{if(d&&maxDev>2){fab.dataset.dragged='1';draggedThisPress=true;trySnap();saveFabPos();}d=false;});
+    onDoc('mouseup',()=>{if(d&&maxDev>2){fab.dataset.dragged='1';draggedThisPress=true;trySnap();saveFabPos();}d=false;});
   })();
   let tId=null,tlx=0,tly=0,tmax=0;
   fab.addEventListener('touchstart',e=>{const t=e.changedTouches[0];tId=t.identifier;tlx=t.clientX;tly=t.clientY;tmax=0;curPress=++pressId;draggedThisPress=false;},{passive:true});
@@ -959,9 +939,9 @@ const fab = document.createElement('button');
     if(state.authorPage){$.sm.className='m cp';$.sm.textContent='主页';$.ss.textContent='';return;}
     if(userPauseMode){$.sm.className='m cy';$.sm.textContent='暂停';$.ss.textContent='';return;}
     if(userBackMode){$.sm.className='m cp';$.sm.textContent='回看';$.ss.textContent='';return;}
+    if(r.verdict==='userback'){$.sm.className='m cp';$.sm.textContent='回看';$.ss.textContent='';return;} // v14.2：补 userback 分支，不再落到"读取中"
     if(!cfg.enabled){$.sm.className='m cy';$.sm.textContent='已停止';$.ss.textContent='';return;}
     if(r.verdict==='live'){$.sm.className='m cb';$.sm.textContent='直播';$.ss.textContent='';}
-    else if(r.verdict==='ad'){$.sm.className='m cr';$.sm.textContent='广告';$.ss.textContent='';}
     else if(r.verdict==='game-shopping'){$.sm.className='m cr';$.sm.textContent='购物';$.ss.textContent='';}
     else if(r.verdict==='male-skip'){$.sm.className='m cr';$.sm.textContent='男性';$.ss.textContent='';}
     else if(r.verdict==='music-keep'){$.sm.className='m cg';$.sm.textContent='音乐保留';$.ss.textContent='汽水音乐';}
@@ -1002,17 +982,14 @@ const fab = document.createElement('button');
     const BASE_W = 200;
     const MIN_Z = 0.6;
     const maxZoom = () => Math.min((vh - 8) / BASE_H, (vw - 8) / BASE_W);
-    const defaultZoom = () => {
-      const target = (vh * 0.75) / BASE_H;
-      return Math.max(MIN_Z, Math.min(maxZoom(), target));
-    };
     let anchorVis = null;
     rs.addEventListener('mousedown',e=>{
       d=true;e.preventDefault();e.stopPropagation();
       const z0 = parseFloat(panel.style.zoom)||1;
       anchorVis = { l: (parseFloat(panel.style.left)||0) * z0, t: (parseFloat(panel.style.top)||0) * z0 };
     });
-    document.addEventListener('mousemove',e=>{
+    // v14.2：document/window 级监听走 onDoc/onWin 登记，stop() 可清理
+    onDoc('mousemove',e=>{
       if(!d||!anchorVis)return;
       const targetZ = (e.clientX - anchorVis.l) / BASE_W;
       const z = Math.max(MIN_Z, Math.min(maxZoom(), targetZ));
@@ -1020,14 +997,14 @@ const fab = document.createElement('button');
       panel.style.left = (anchorVis.l / z) + 'px';
       panel.style.top = (anchorVis.t / z) + 'px';
     });
-    document.addEventListener('mouseup',()=>{if(d){d=false;anchorVis=null;const _z=parseFloat(panel.style.zoom);panel.dataset.userZoom=_z;try{localStorage.setItem('dyhlf_zoom',String(_z));}catch(e){}}});
+    onDoc('mouseup',()=>{if(d){d=false;anchorVis=null;const _z=parseFloat(panel.style.zoom);panel.dataset.userZoom=_z;try{localStorage.setItem('dyhlf_zoom',String(_z));}catch(e){}}});
     // v14.1：resize 时不重置 zoom，只重新调整面板位置
-    window.addEventListener('resize', () => {
+    onWin('resize', () => {
       vw = innerWidth; vh = innerHeight;
       if (panel.style.display !== 'none') placePanel();
     });
   })();
-  document.addEventListener('mousedown',e=>{
+  onDoc('mousedown',e=>{
     if (panel.style.display==='none') return;
     if (panel.contains(e.target)) return;
     if (e.target.closest && e.target.closest('#dy-fab')) return;
@@ -1035,11 +1012,13 @@ const fab = document.createElement('button');
   });
   const _dyClear = () => {
     try { window.__dyhlf?.stop(); } catch(e){}
-    try { localStorage.removeItem('dyhlf_cfg'); localStorage.removeItem('dyhlf_pp'); localStorage.removeItem('dyhlf_theme'); localStorage.removeItem('dyhlf_zoom'); } catch(e){}
+    // v14.2：补删 dyhlf_open / dyhlf_fab
+    try { ['dyhlf_cfg','dyhlf_pp','dyhlf_theme','dyhlf_zoom','dyhlf_open','dyhlf_fab'].forEach(k => localStorage.removeItem(k)); } catch(e){}
     try { document.getElementById('dy')?.remove(); } catch(e){}
     try { document.getElementById('dy-fab')?.remove(); } catch(e){}
   };
   document.getElementById('dy-cls').onclick = _dyClear;
+  // v14.2：__dySrc 已在脚本启动时由 fetch(chrome.runtime.getURL('content.js')) 填充，重启真正生效
   const _dyRestart = () => {
     try {
       if (typeof window.__dySrc === 'string' && window.__dySrc.length > 1000) {
@@ -1081,14 +1060,16 @@ const fab = document.createElement('button');
   window.__dyhlf={cfg,state,getState(){return{...state,threshold:cfg.threshold,enabled:cfg.enabled,vid:currentVid()};},
     stop(){
       cfg.enabled=false;
+      _stopped = true;
       clearTimeout(_tickTimer);   // v14.1：停掉自调度的 tick
       clearTimeout(_saveT);
+      // v14.2：清理 fab 吸附重试定时器
+      while (_pinTimers.length) clearTimeout(_pinTimers.pop());
       invalidate();
-      document.removeEventListener('keydown',onKey,true);
-      document.removeEventListener('wheel',onWheel,true);
-      document.removeEventListener('click',onClick,true);
+      // v14.2：统一清理所有 document/window 级监听（拖拽/缩放/点外关闭/resize 等）
+      while (_disposers.length) { try { _disposers.pop()(); } catch(e){} }
       _uiObs.disconnect();
       panel.remove();fab.remove();style.remove();window.__dyhlf=null;
     }};
-  console.log('[FILTER v14.1] loaded');
+  console.log('[FILTER v14.3] loaded');
 })();
