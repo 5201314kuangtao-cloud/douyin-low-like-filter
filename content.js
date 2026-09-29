@@ -249,11 +249,15 @@
     return val;
   }
   function updatePageMode() {
-    state.authorPage = isAuthorPage();
+    // v16.4：URL 含 /user/ 或右侧作者抽屉打开时判定作者页
+    const p = location.pathname || '/';
+    const drawerOpen = document.body.textContent.includes('TA的作品');
+    state.authorPage = /^\/(user|profile|author|@)/i.test(p) || drawerOpen ? true : isAuthorPage();
     if (state.authorPage) {
       invalidate();
       state.activeVid = null;
       state.handling = false;
+      jDone.clear();
     }
   }
   function visible(el) {
@@ -627,7 +631,7 @@
         hist.length = hidx+1; // v14.2：截断后统一 rebuildHistPos 重建索引
         rebuildHistPos();
       }
-      // v16.3 修复 #2/#3：回看/继续后、阈值调整后，当前视频需重判（低赞立即跳过、不漏判）。
+      // v16.4 修复 #2/#3：回看/继续后、阈值调整后，当前视频需重判（低赞立即跳过、不漏判）。
       // 仅去重"入栈/计数"，不再短路判定逻辑；已在本位则跳过入栈但照常走判定。
       if (!(hidx >= 0 && hist[hidx] === vid)) {
         hist.push(vid); histAdd(vid); hidx = hist.length-1;
@@ -752,7 +756,7 @@
     if (commentsOpen()) { state._holdVid = currentVid(); markDirty(); _tickTimer = setTimeout(tick, TICK_IDLE); return; }
     if (state._holdVid != null) {
       const _held = state._holdVid; state._holdVid = null;
-      // v16.3 修复 #3：关评论后强制重判当前视频（activeVid 置空，下一轮 tick 重新进入 handleNewVideo），
+      // v16.4 修复 #3：关评论后强制重判当前视频（activeVid 置空，下一轮 tick 重新进入 handleNewVideo），
       // 避免低赞视频因"恢复即保留"而漏跳
       if (_held === currentVid()) { state.activeVid = null; markDirty(); _tickTimer = setTimeout(tick, TICK_IDLE); return; }
       // 不同：走正常 handleNewVideo 重新判定
@@ -781,7 +785,7 @@
     userBackMode = false; userPauseMode = false; invalidate();
     state.activeVid = null; state.handling = false; backArmed = false;
     state.consecutiveSkips = 0;
-    jDone.clear(); // v16.3：回看后清空跳过缓存，重新判定
+    jDone.clear(); // v16.4：回看后清空跳过缓存，重新判定
     markDirty();
     try { tick(); } catch(e){}
   }
@@ -817,14 +821,22 @@
     if (!e.target?.closest?.('[data-e2e="video-switch-prev-arrow"]')) return;
     enterUserBack();
   }
-  onDoc('keydown', onKey, true);
+    onDoc('keydown', onKey, true);
+  // v16.4：URL 变化时立即判定作者页，不等 tick
+  let _lastPath = location.pathname;
+  setInterval(() => {
+    if (location.pathname !== _lastPath) {
+      _lastPath = location.pathname;
+      updatePageMode();
+    }
+  }, 100);
   onDoc('wheel', onWheel, {capture:true, passive:true});
   onDoc('click', onClick, true);
   // v16.1 ①：删除 pause/play 事件监听，改由 tick 轮询真实 video.paused（见 pollPauseState），根除事件竞态
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v16.3 · 视觉草案 v2（达芬奇-视觉体验专家）
+  style.textContent = `/*dyhlf-v16.4 · 视觉草案 v2（达芬奇-视觉体验专家）
   基于：诺曼《交互规格 v16》§3.1 DOM + §5 组件规范 · 集成契约 v1（含修订：BASE 运行时量取、尺寸自由）
   落码方式：整块并入 content.js style 模板；含自清理标记（头部 dyhlf 注释 + #dy-fab 规则）
   依赖：--ac / --ac-rgb 由引擎 _applyTheme 注入（需同步扩展到 #dy-fab，1 行，见规格 §7）
@@ -1018,7 +1030,7 @@
       <i data-c="78,155,255" data-hex="#4E9BFF" style="background:#4E9BFF"></i>
       <i data-c="44,232,160" data-hex="#2CE8A0" style="background:#2CE8A0"></i>
     </div>
-    <div class="ver">v16.3</div>
+    <div class="ver">v16.4</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
@@ -1264,7 +1276,7 @@
     }
     savePanelOpen();
   };
-  // v16.3：FAB 框架已还原（16.0），上面为悬浮球创建/吸附/拖拽/点击全部逻辑
+  // v16.4：FAB 框架已还原（16.0），上面为悬浮球创建/吸附/拖拽/点击全部逻辑
   // v16.0：缩放基准运行时量取（替换硬编码 BASE_W/BASE_H，面板高度不再受 378 约束）。
   // Chrome 的 zoom 参与 layout，offsetWidth/Height 含缩放量，量取后 ÷zoom 还原自然尺寸；
   // 量取值经共享 let 变量同步刷新 maxZoom 与拖拽缩放分母；ResizeObserver 盯 #dy 单路径，
@@ -1303,7 +1315,7 @@
     $.rfem.setAttribute('aria-pressed', String(!!cfg.keepFemale));
     $.rmus.setAttribute('aria-pressed', String(!!cfg.keepMusic));
     $.rj.setAttribute('aria-pressed', String(!!cfg.autoJ));
-    // v16.3：悬浮球三态角标由 render() 内 _fabBadge 同步驱动（状态卡仍完整呈现 运行/暂停/回看/评论中）
+    // v16.4：悬浮球三态角标由 render() 内 _fabBadge 同步驱动（状态卡仍完整呈现 运行/暂停/回看/评论中）
   }
   // v14.1：脏标记保留（避免每次 tick 都刷 UI），但所有 state 变更处都补了 markDirty()
   let _dirty = true;
@@ -1452,7 +1464,7 @@
   const _dyClear = () => {
     try { window.__dyhlf?.stop(); } catch(e){}
     // v16.0 待修 #1/#3：补清 dyhlf_src（热重启源码残留）与 dyhlf_seen（首引导标记，否则清除后引导不复活）
-    // v16.3：dyhlf_fab / dyhlf_open 已恢复使用（FAB 框架还原），仍不在此清除清单（用户已存值保留）
+    // v16.4：dyhlf_fab / dyhlf_open 已恢复使用（FAB 框架还原），仍不在此清除清单（用户已存值保留）
     try { ['dyhlf_cfg','dyhlf_pp','dyhlf_theme','dyhlf_zoom','dyhlf_time','dyhlf_src','dyhlf_seen'].forEach(k => localStorage.removeItem(k)); } catch(e){}
     try { document.getElementById('dy')?.remove(); } catch(e){}
     try { document.getElementById('dy-fab')?.remove(); } catch(e){}
