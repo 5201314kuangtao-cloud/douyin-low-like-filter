@@ -1,20 +1,19 @@
 (function __dyhlfBoot() {
   'use strict';
-  // dyhlf v17.0-AI3 · UI/交互复审终检：收编 v16.7 四小修 + 实测回退其气泡÷zoom修正 + 随版对齐（详见 CHANGELOG/REVIEW）（本行是热重启版本指纹，改动需与 VERSION 同步）
-  // ── 以下为 v17.0-AI1 变更（面板位置落盘防抖，AI1；其样式头版本注漏对齐，本轮补齐）──
-  // ── 以下为 v16.8 变更（筛选准确率/DOM 兼容收紧）──
+  // dyhlf v17.1 · 三AI融合终版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  //   v16.6 基线，收编 AI1/AI2/AI3 三版一致修改 + AI1 落盘防抖（AI3 终检收编）；
+  //   唯一分歧「阈值气泡定位÷zoom」按 AI3 实测回退，本版维持 v16.6 原实现
   //   [1] isLiveFast 不稳分支补齐安全语义：scanned<5 时与"空矩形"分支同款——返回 false 且不缓存。
   //       原版此时返回"没找到控件=直播"并被 handleNewVideo 直接采信，video 已就绪但控件/文案晚渲染的
   //       普通视频会被当直播跳走；改后宁可按普通视频保留（unknown=保留 原则的直播版），
   //       真直播仍靠"进入直播间"文本命中与 scanned≥5 的控件缺失判定兜底
   //   [2] 启发式赞数读取按按钮语义排除 comment/collect/share 兄弟按钮自身计数（门控④同思路，纯排除）：
   //       精确赞数节点缺失/延迟/改名时，不再把评论数、收藏数、分享数误当点赞数参与阈值判定
-  // ── 以下为 v16.7 变更（UI/交互复审五小修；其中 [2] 气泡÷zoom 已于 v17.0-AI3 实测回退）──
-  //   [1] 女生保留状态卡 'm ca'→'m cp'：回归「粉=女生」契约——ca 随主题强调色变，红主题下"保留"呈跳过红，语义冲突
-  //   [2] 阈值档位气泡定位 ÷zoom：clientWidth 是含 zoom 的视觉px、style.left 是未缩放本地px，缩放≠1 时气泡偏离拇指
-  //   [3] resize 时 FAB 钳回视口：半屏贴靠/浏览器放大后悬浮球可能整个在屏外，重载后也进不来
-  //   [4] Esc 关闭「⋯更多」菜单（含确认态还原；不 preventDefault，抖音自身 Esc 关抽屉不受影响）
-  //   [5] 滑杆 pointerup 即 blur 交还焦点：否则焦点滞留 range，W/S/↑↓ 被 onKey 的 INPUT 守卫拦截，快捷键"假死"
+  //   [3] 女生保留状态卡 'm ca'→'m cp'：回归「粉=女生」契约——ca 随主题强调色变，红主题下"保留"呈跳过红
+  //   [4] resize 时 FAB 钳回视口：半屏贴靠/浏览器放大后悬浮球可能整个在屏外，重载后也进不来
+  //   [5] Esc 关闭「⋯更多」菜单（含确认态还原；不 preventDefault，抖音自身 Esc 关抽屉不受影响）
+  //   [6] 滑杆 pointerup 即 blur 交还焦点：否则焦点滞留 range，W/S/↑↓ 被 onKey 的 INPUT 守卫拦截，快捷键"假死"
+  //   [7] 面板位置落盘防抖：placePanel 不再每帧同步写 localStorage，改 200ms 防抖 + stop() 刷最终位置
   // ── 以下为 v16.6 变更（悬浮球保留·角标删除等 12 项）──
   //   [1] 用户拍板：悬浮球保留常驻，三态角标整链删除（原角标因 render 各状态分支提前 return，从未显示过）
   //   [2] FAB 玻璃底修复：变量块选择器 #dy → #dy,#dy-fab（悬浮球是 body 子元素，继承不到 --glass）
@@ -45,7 +44,7 @@
   //   8) 评论打开时 exitUserBack 不自动 play（滚评论不再误触发播放）
   //   9) 主题全量着色：全部语义色由主题色 HSL 派生（状态卡/计数/FAB 角标随主题换装），
   //      新增 紫/橙/青 主题点共 6 色；女生保留状态条补主题色左缘
-  const VERSION = '17.0-AI3';
+  const VERSION = '17.1';
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
@@ -993,7 +992,7 @@
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v17.0-AI3 · 视觉草案 v2（达芬奇-视觉体验专家）
+  style.textContent = `/*dyhlf-v17.1 · 视觉草案 v2（达芬奇-视觉体验专家）
   基于：诺曼《交互规格 v16》§3.1 DOM + §5 组件规范 · 集成契约 v1（含修订：BASE 运行时量取、尺寸自由）
   落码方式：整块并入 content.js style 模板；含自清理标记（头部 dyhlf 注释 + #dy-fab 规则）
   依赖：--ac / --ac-rgb 由引擎 _applyTheme 注入（需同步扩展到 #dy-fab，1 行，见规格 §7）
@@ -1187,7 +1186,7 @@
       <i data-c="255,149,0" data-hex="#FF9500" style="background:#FF9500"></i>
       <i data-c="34,222,226" data-hex="#22DEE2" style="background:#22DEE2"></i>
     </div>
-    <div class="ver">v17.0-AI3</div>
+    <div class="ver">v17.1</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
@@ -1291,8 +1290,8 @@
   // v16.0：拖动时浮于 thumb 上方的档位气泡，松手 0.8s 消散（顶行 #slv 保留，双保险）
   let _bubT = null;
   function showBub(){
-    // v17.0-AI3 [2]：回退 v16.7 的 ÷zoom——实测现版 Chrome（zoom 已标准化）后代 clientWidth
-    // 不含缩放、style.left 同为未缩放本地px，两者同坐标系直读即准；÷zoom 反致偏移（实测 84.4≠128）
+    // v17.1：维持 v16.6 原实现——AI3 实测现代 Chrome（zoom 已标准化）后代 clientWidth 不含缩放、
+    // 与 style.left 同坐标系直读即准，÷zoom 反致偏移（AI1/AI2 的 v16.7[2] 实测不收编）
     const w = _slwrap.clientWidth;
     const x = (+$.sl.value / (THRESHOLD_PRESETS.length - 1)) * (w - 16) + 8;
     _bub.hidden = false;
@@ -1368,7 +1367,7 @@
     tryPin(10);
   })();
   let pressId = 0, curPress = 0, draggedThisPress = false;
-  let _ppT = null; // v17.0-AI1：面板位置落盘防抖——拖拽 mousemove/touchmove 每帧都调 placePanel，不能每帧同步写 localStorage
+  let _ppT = null; // v17.1：面板位置落盘防抖——拖拽 mousemove/touchmove 每帧都调 placePanel，不能每帧同步写 localStorage
   function placePanel(){
     const fr=fab.getBoundingClientRect();
     const pr=panel.getBoundingClientRect();
@@ -1732,7 +1731,7 @@
       clearTimeout(_confirmT);    // v16.0：清除确认还原定时器
       clearInterval(_pathT);      // v16.5 ③：100ms 路径监听
       _pinTimers.forEach(clearTimeout); _pinTimers.length = 0; // v16.6 [10]：FAB 吸附重试定时器补清
-      // v17.0-AI1：位置落盘防抖收尾——停用/重启即刷最终位置（此刻 panel 尚未 remove，读到的是当前值）
+      // v17.1：位置落盘防抖收尾——停用/重启即刷最终位置（此刻 panel 尚未 remove，读到的是当前值）
       clearTimeout(_ppT);
       try { localStorage.setItem('dyhlf_pp', JSON.stringify({l:panel.style.left,t:panel.style.top})); } catch(e){}
       invalidate();
