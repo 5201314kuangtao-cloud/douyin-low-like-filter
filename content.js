@@ -1,6 +1,51 @@
 (function __dyhlfBoot() {
   'use strict';
-  const VERSION = '16.2';
+  // dyhlf v17.0-AI3 · UI/交互复审终检：收编 v16.7 四小修 + 实测回退其气泡÷zoom修正 + 随版对齐（详见 CHANGELOG/REVIEW）（本行是热重启版本指纹，改动需与 VERSION 同步）
+  // ── 以下为 v17.0-AI1 变更（面板位置落盘防抖，AI1；其样式头版本注漏对齐，本轮补齐）──
+  // ── 以下为 v16.8 变更（筛选准确率/DOM 兼容收紧）──
+  //   [1] isLiveFast 不稳分支补齐安全语义：scanned<5 时与"空矩形"分支同款——返回 false 且不缓存。
+  //       原版此时返回"没找到控件=直播"并被 handleNewVideo 直接采信，video 已就绪但控件/文案晚渲染的
+  //       普通视频会被当直播跳走；改后宁可按普通视频保留（unknown=保留 原则的直播版），
+  //       真直播仍靠"进入直播间"文本命中与 scanned≥5 的控件缺失判定兜底
+  //   [2] 启发式赞数读取按按钮语义排除 comment/collect/share 兄弟按钮自身计数（门控④同思路，纯排除）：
+  //       精确赞数节点缺失/延迟/改名时，不再把评论数、收藏数、分享数误当点赞数参与阈值判定
+  // ── 以下为 v16.7 变更（UI/交互复审五小修；其中 [2] 气泡÷zoom 已于 v17.0-AI3 实测回退）──
+  //   [1] 女生保留状态卡 'm ca'→'m cp'：回归「粉=女生」契约——ca 随主题强调色变，红主题下"保留"呈跳过红，语义冲突
+  //   [2] 阈值档位气泡定位 ÷zoom：clientWidth 是含 zoom 的视觉px、style.left 是未缩放本地px，缩放≠1 时气泡偏离拇指
+  //   [3] resize 时 FAB 钳回视口：半屏贴靠/浏览器放大后悬浮球可能整个在屏外，重载后也进不来
+  //   [4] Esc 关闭「⋯更多」菜单（含确认态还原；不 preventDefault，抖音自身 Esc 关抽屉不受影响）
+  //   [5] 滑杆 pointerup 即 blur 交还焦点：否则焦点滞留 range，W/S/↑↓ 被 onKey 的 INPUT 守卫拦截，快捷键"假死"
+  // ── 以下为 v16.6 变更（悬浮球保留·角标删除等 12 项）──
+  //   [1] 用户拍板：悬浮球保留常驻，三态角标整链删除（原角标因 render 各状态分支提前 return，从未显示过）
+  //   [2] FAB 玻璃底修复：变量块选择器 #dy → #dy,#dy-fab（悬浮球是 body 子元素，继承不到 --glass）
+  //   [3] 语义色回归写死（绿=达标 红=跳过 黄=暂停 紫=回看 蓝=直播 粉=女生），主题色只管 --ac 强调色，
+  //       恢复 v16.0「语义色不跟主题」契约；顺带修好引导条黄底红字
+  //   [4] render 把「已停止」提到最前 + 关运行开关清暂停/回看态，修复停用后恒显「暂停」
+  //   [5] 辅助回看确认窗 350→600ms，开评论不补退；退出回看的评论守卫绕 300ms 缓存直查 DOM
+  //   [6] exitUserBack/updatePageMode 不再清 jDone——J 是切换键，重按会把已清屏切回未清屏
+  //   [7] applyThreshold 补 activeVid=null，拖阈值后当前视频立即重判
+  //   [8] currentVid 优先锚定 /video/<数字id>，文案渐进加载不再改变 vid、hist 不再重复入栈
+  //   [9] 抽屉检测去周期全量 body 扫描：点击/Esc/导航后事件驱动重检，锚定 feed 侧栏 #relatedVideoCard
+  //       作者卡片（实测：「TA的作品」页签常驻 DOM，v16.5 全 body 文本检查恒真属误判源）
+  //   [10] stop() 补清 _pinTimers；[11] 引导/tooltip 补「空格=暂停/恢复」、已停止/主页补副文案
+  //   [12] 投影减轻（面板 .40→.30、FAB .5→.35）；VERSION/UI/console/manifest 五处对齐 16.6
+  // ── 以下为 v16.5 变更（红队修复版）──
+  //   1) 修复僵尸 tick 链：exitUserBack 直接调 tick() 未先 clearTimeout，用户每按一次 ↓/S
+  //      就多一条永续 tick 链且 stop() 杀不干净（越用越卡的根因）；tick 加 _stopped 守卫
+  //   2) 修复作者抽屉检测每 tick 全量序列化 body.textContent（v15.2 已删的周期全 body 扫描回潮），
+  //      加 600ms 缓存；updatePageMode 状态未变早退，不再每 tick 重复 invalidate
+  //   3) 修复 100ms 路径监听 setInterval 从不被清理，重启/清除一次漏一个
+  //   4) VERSION 与 manifest/UI 三处版本对齐（16.2→16.5）；dyhlf_src 指纹改匹配文件头
+  //      字面标记（原 'FILTER v'+VERSION 拼接串在源码中永不字面出现，校验恒失败）
+  //   5) 新增：连跳打断辅助回看——连跳中上滑/↑/W 时若页面卡顿致手势未被处理，
+  //      脚本主动补一次「上一个」，保证一次操作确定回看成功
+  //   6) 新增：下滑/S 退出回看或暂停时，若视频仍暂停则自动 play() 恢复，
+  //      避免回看归来脚本停在"暂停中"不再自动筛选、用户误以为失灵
+  //   7) 辅助回看改 350ms 延迟确认（视频已变/已退出回看则不补），根除"原生+辅助"双退
+  //   8) 评论打开时 exitUserBack 不自动 play（滚评论不再误触发播放）
+  //   9) 主题全量着色：全部语义色由主题色 HSL 派生（状态卡/计数/FAB 角标随主题换装），
+  //      新增 紫/橙/青 主题点共 6 色；女生保留状态条补主题色左缘
+  const VERSION = '17.0-AI3';
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
@@ -41,7 +86,9 @@
       try {
         const _savedSrc = localStorage.getItem('dyhlf_src');
         // v16.1 ⑥：仅当源码版本指纹匹配当前版才采用，否则视为残旧源码丢弃并清除，避免重启执行旧码
-        if (_savedSrc && _savedSrc.length > 1000 && _savedSrc.includes('FILTER v' + VERSION)) window.__dySrc = _savedSrc;
+        // v16.5 ④：指纹改匹配文件头字面注释标记（原 'FILTER v'+VERSION 是运行时拼接串，
+        // 在源码文本中永不字面出现，导致校验恒失败、dyhlf_src 每次启动都被白删重拉）
+        if (_savedSrc && _savedSrc.length > 1000 && _savedSrc.includes('dyhlf v' + VERSION)) window.__dySrc = _savedSrc;
         else { try { localStorage.removeItem('dyhlf_src'); } catch (e) {} }
       } catch (e) {}
       if (window.__dySrc == null && typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
@@ -215,9 +262,10 @@
   const _NORM_RE = /[\s\u00a0\u200b\u200c\u200d]/g;
   const norm = s => String(s || '').replace(_NORM_RE, '');
   const commentsCache = { at: 0, val: false };
-  function commentsOpen() {
+  function commentsOpen(force) {
     const now = performance.now();
-    if (now - commentsCache.at < 300) return commentsCache.val;
+    // v16.6 [5]：force=true 绕过 300ms 缓存直查 DOM（退出回看的 play() 守卫用，消除缓存漏窗出声）
+    if (!force && now - commentsCache.at < 300) return commentsCache.val;
     let val = false;
     const el = document.querySelector('[data-e2e="comment-list"],.comment-mainContent');
     if (el) {
@@ -248,16 +296,58 @@
     authorPageCache.val = val;
     return val;
   }
+  // v16.6 [9]：抽屉检测去周期全量扫描——v16.5 每 600ms 序列化一次 body.textContent（约 1.7 次/秒）。
+  // 实测（2026-09-30 抖音线上 DOM）：右侧作者卡片不是 body 级 portal，而是渲染在 feed 侧栏内的
+  // #relatedVideoCard（LookModalFrameFast，内含 semi tabs 的「TA的作品」页签）——该页签文本常驻
+  // DOM，v16.5 的全 body 文本检查会恒判“抽屉开”；找 body 子层 fixed portal 又恒空。故改为
+  // 卡片元素锚定：点击 / Escape / 路径变化后事件驱动重检，卡片可见且含该文本 = 抽屉开。
+  let _drawerNode = null;
+  const _drawerScanTs = new Set();
+  function _drawerScanText() {
+    try {
+      const card = document.getElementById('relatedVideoCard') || document.querySelector('.LookModalFrameFast');
+      let open = false;
+      if (card) {
+        const r = card.getBoundingClientRect();
+        open = r.width > 100 && r.height > 100 &&
+               (card.textContent || '').includes('TA的作品') &&
+               (typeof card.checkVisibility !== 'function' || card.checkVisibility());
+      }
+      _drawerNode = open ? card : null;
+    } catch (e) {}
+  }
+  function _scheduleDrawerScan() {
+    if (_stopped) return;
+    _drawerScanText(); // v16.6：卡片检测本身只花 ~0.1ms（getElementById+rect+卡片内文本），同步先检一次
+    for (const d of [350, 1200, 3000]) {
+      if (_drawerScanTs.has(d)) continue;
+      _drawerScanTs.add(d);
+      setTimeout(() => {
+        _drawerScanTs.delete(d);
+        if (!_stopped) _drawerScanText();
+      }, d);
+    }
+  }
+  function authorDrawerOpen() {
+    if (_drawerNode) {
+      if (!_drawerNode.isConnected) _drawerNode = null;
+      else if (typeof _drawerNode.checkVisibility === 'function' && !_drawerNode.checkVisibility()) _drawerNode = null;
+    }
+    return !!_drawerNode;
+  }
   function updatePageMode() {
     // v16.4：URL 含 /user/ 或右侧作者抽屉打开时判定作者页
     const p = location.pathname || '/';
-    const drawerOpen = document.body.textContent.includes('TA的作品');
-    state.authorPage = /^\/(user|profile|author|@)/i.test(p) || drawerOpen ? true : isAuthorPage();
-    if (state.authorPage) {
+    const val = /^\/(user|profile|author|@)/i.test(p) || authorDrawerOpen() || isAuthorPage();
+    // v16.5 ②：状态未变早退——原版停在作者页期间每 tick 重复 invalidate/清 jDone
+    if (val === state.authorPage) return;
+    state.authorPage = val;
+    markDirty(); // v16.6：模式翻转立即重绘状态卡，避免停留在上一次判定文案（实测踩过：卡片开着却显示"直播"）
+    if (val) {
       invalidate();
       state.activeVid = null;
       state.handling = false;
-      jDone.clear();
+      // v16.6 [6]：不再 jDone.clear()——回 feed 重判会再按一次 J，把已清屏视频切回未清屏
     }
   }
   function visible(el) {
@@ -325,8 +415,15 @@
     let vid;
     const it = activeItem();
     if (it) {
-      const v = it.querySelector('video');
-      vid = 'f|' + getNickname(it) + '|' + getDesc(it).slice(0,100) + '|' + (v?.currentSrc || v?.src || v?.poster || '');
+      // v16.6 [8]：优先锚定 feed 项内 /video/<数字id> 链接作 vid——昵称/文案渐进加载会变，
+      // 拼接 vid 漂移会导致 hist 重复入栈、同一视频重复判定；取不到链接再退回拼接兜底
+      const _a = it.querySelector('a[href*="/video/"]');
+      const _mid = _a ? (/\/video\/(\d+)/.exec(_a.getAttribute('href') || '') || [])[1] : null;
+      if (_mid) vid = 'f|' + _mid;
+      else {
+        const v = it.querySelector('video');
+        vid = 'f|' + getNickname(it) + '|' + getDesc(it).slice(0,100) + '|' + (v?.currentSrc || v?.src || v?.poster || '');
+      }
     } else {
       const m = location.pathname.match(/\/video\/(\d+)/);
       vid = m ? 'v|' + m[1] : 'x|' + location.pathname;
@@ -370,8 +467,10 @@
           if (t.includes('倍速') || t.includes('清屏')) { has = true; break; }
         }
         result = !has;
-        // 可见子元素太少说明右下角控件还没渲染出来，此时的"直播"判定不可信
-        if (scanned < 5) stable = false;
+        // v16.8 [1]：可见子元素太少说明右下角控件还没渲染出来，此时的"直播"判定不可信——
+        // 与上方"空矩形"分支同款安全语义：返回 false 且不缓存。宁可当普通视频保留，
+        // 不在 DOM 未稳时把普通视频当直播跳走（真直播由文本命中与稳定后的重扫兜底）
+        if (scanned < 5) { result = false; stable = false; }
       }
     }
     if (stable) cacheSet(vidLiveCache, vid, result);
@@ -433,6 +532,9 @@
       if (!el.isConnected || !visible(el)) continue;
       // v16.1 门控④：启发式读取排除评论区数字，防止关评论/看完连播时误读评论区点赞、楼中楼计数
       if (el.closest && el.closest('[data-e2e="comment-list"],.comment-mainContent')) continue;
+      // v16.8 [2]：门控④同思路——按按钮语义排除评论/收藏/分享按钮自身计数（纯排除，选择器不符时自动无效），
+      // 精确赞数节点缺失/延迟时不再把动作栏兄弟按钮的数字误当点赞数
+      if (el.closest && el.closest('[data-e2e*="comment"],[data-e2e*="collect"],[data-e2e*="share"]')) continue;
       const r = el.getBoundingClientRect();
       if (r.left < vw*0.55 || r.left > vw*0.98) continue;
       if (r.top < vh*0.18 || r.top > vh*0.86) continue;
@@ -568,6 +670,23 @@
       try {
         target.dispatchEvent(new KeyboardEvent('keydown',data));
         target.dispatchEvent(new KeyboardEvent('keyup',data));
+      } catch(e){}
+    });
+  }
+  // v16.5 ⑤：连跳打断辅助回看用的"上一个"工具（派发细节与 DOWN 对称）
+  const UP_INIT = Object.freeze({key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38,bubbles:true,cancelable:true,composed:true});
+  function clickPrevArrow() {
+    const el = document.querySelector('[data-e2e="video-switch-prev-arrow"]');
+    if (!el) return false;
+    try { withSynthetic(() => el.click()); return true; } catch(e){ return false; }
+  }
+  function pressArrowUp() {
+    const target = synthKeyTarget();
+    if (!target) return;
+    withSynthetic(() => {
+      try {
+        target.dispatchEvent(new KeyboardEvent('keydown',UP_INIT));
+        target.dispatchEvent(new KeyboardEvent('keyup',UP_INIT));
       } catch(e){}
     });
   }
@@ -734,6 +853,7 @@
     if (userPauseMode !== v.paused) { userPauseMode = v.paused; markDirty(); }
   }
   function tick() {
+    if (_stopped) return; // v16.5 ①：僵尸链守卫——stop() 后漏网的定时器到此自杀
     // v15.0：前台可见时长累计（隐藏时不计）；跨分钟刷新时间账本显示
     const _nowT = performance.now();
     if (!document.hidden) _visibleMs += _nowT - _lastTickAt;
@@ -775,26 +895,58 @@
   }
   _tickTimer = setTimeout(tick, TICK_FAST);
 
-  function enterUserBack() {
+  function enterUserBack(assist) {
     userBackMode = true; userPauseMode = false; invalidate();
     state.activeVid = null; state.handling = false; backArmed = true;
     state.consecutiveSkips = 0; // v15.2：回看后不延续连跳 turbo 速度
+    // v16.5 ⑤：连跳打断辅助回看——连跳中（末次合成跳转 800ms 内）上滑/↑/W 想抓回刚被
+    // 跳走的视频时，页面常因跳转惯性卡顿、手势没被抖音处理；脚本主动补一次「上一个」。
+    // 点 UI 左箭头不辅助（用户点了就是精确回退，别双退）。
+    // v16.5 ⑦：辅助改 350ms 延迟确认——到点时视频已变（原生手势其实生效了）或用户已
+    // 滑回正轨/脚本已停，就不再补，防止"原生退一次 + 辅助再退一次"的双退过头。
+    if (assist && performance.now() - _lastJumpAt < 800) {
+      const _vidAtGesture = currentVid();
+      setTimeout(() => {
+        // v16.6 [5]：确认窗 350→600ms（页面卡顿时原生手势可能 >350ms 才反映到 vid，防双退）；
+        // 开评论时不补退（跳转后 800ms 内滚评论不再误触「上一个」）
+        if (_stopped || !userBackMode || commentsOpen() || currentVid() !== _vidAtGesture) return;
+        if (!clickPrevArrow()) pressArrowUp();
+      }, 600);
+    }
     markDirty();
   }
   function exitUserBack() {
+    // v16.5 ①：非回看/暂停态的 S/↓ 是 no-op 早退——原版每次按键都全量重置并直接调 tick()，
+    // 且没先 clearTimeout，每按一次就多一条永续 tick 链（stop() 也杀不干净，越用越卡的根因）
+    if (!userBackMode && !userPauseMode) return;
     userBackMode = false; userPauseMode = false; invalidate();
     state.activeVid = null; state.handling = false; backArmed = false;
     state.consecutiveSkips = 0;
-    jDone.clear(); // v16.4：回看后清空跳过缓存，重新判定
+    // v16.6 [6]：不再 jDone.clear()——J 是切换键，清空后重判同一视频会再按一次 J 把清屏切回去
+    // v16.5 ⑥：下滑/S 恢复时若视频仍处暂停，一并 play() 恢复——否则（尤其回看后的暂停视频）
+    // 脚本会因 pollPauseState 的真实暂停态停在"暂停中"不再自动筛选，用户以为脚本失灵。
+    // 与 v16.1 的 S 键恢复路径同款行为，滚轮/↓ 恢复补齐同样体验。
+    // v16.5 ⑧：评论打开时不 play——滚评论列表同样触发 wheel→exitUserBack，
+    // 不能让"挂着暂停视频滚评论"突然出声。
+    try {
+      const _it = activeItem();
+      const _v = _it && _it.querySelector('video');
+      if (!commentsOpen(true) && _v && _v.paused && !_v.ended) _v.play().catch(()=>{});
+    } catch (e) {}
     markDirty();
-    try { tick(); } catch(e){}
+    try { clearTimeout(_tickTimer); tick(); } catch(e){}
   }
   function onKey(e) {
     if (syntheticDepth > 0) return;
+    if (e.key === 'Escape') {
+      // v16.7 [4]：菜单开着时 Esc 先关菜单（_closeMenu 含确认态还原；不 preventDefault，抖音自身 Esc 关抽屉不受影响）
+      if (_menu && !_menu.hidden) _closeMenu();
+      _scheduleDrawerScan(); return;
+    } // v16.6 [9]：Esc 关抽屉后事件驱动重检
     const tag = e.target?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
     const key = String(e.key||'').toLowerCase();
-    if (key==='w' || e.key==='ArrowUp' || e.key==='PageUp') { enterUserBack(); return; }
+    if (key==='w' || e.key==='ArrowUp' || e.key==='PageUp') { enterUserBack(true); return; }
     if (key==='s' || e.key==='ArrowDown' || e.key==='PageDown') {
       if (userPauseMode) {
         // v16.1 ①：恢复自动刷时，若视频仍被原生暂停，一并调用 play() 恢复播放，防止"脚本恢复刷、视频没播放"的状态分裂
@@ -813,35 +965,40 @@
     if (syntheticDepth > 0) return;
     const now = performance.now();
     if (now - _lastWheel < 500) return;
-    if (e.deltaY < -10) { _lastWheel = now; enterUserBack(); }
+    if (e.deltaY < -10) { _lastWheel = now; enterUserBack(true); }
     else if (e.deltaY > 10) { _lastWheel = now; exitUserBack(); }
   }
   function onClick(e) {
     if (syntheticDepth > 0) return;
+    _scheduleDrawerScan(); // v16.6 [9]：点击（开/关抽屉等）后事件驱动重检，替代周期全量扫描
     if (!e.target?.closest?.('[data-e2e="video-switch-prev-arrow"]')) return;
     enterUserBack();
   }
     onDoc('keydown', onKey, true);
   // v16.4：URL 变化时立即判定作者页，不等 tick
+  // v16.5 ③：句柄纳入清理——原版 setInterval 从不被 stop() 清除，重启/清除程序一次漏一个
   let _lastPath = location.pathname;
-  setInterval(() => {
+  const _pathT = setInterval(() => {
+    if (_stopped) { clearInterval(_pathT); return; }
     if (location.pathname !== _lastPath) {
       _lastPath = location.pathname;
+      _scheduleDrawerScan(); // v16.6 [9]：导航后事件驱动重检抽屉（原 600ms 缓存已随全量扫描移除）
       updatePageMode();
     }
   }, 100);
   onDoc('wheel', onWheel, {capture:true, passive:true});
   onDoc('click', onClick, true);
+  _scheduleDrawerScan(); // v16.6 [9]：启动先检一次抽屉（兜底刷新时抽屉已开）
   // v16.1 ①：删除 pause/play 事件监听，改由 tick 轮询真实 video.paused（见 pollPauseState），根除事件竞态
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v16.4 · 视觉草案 v2（达芬奇-视觉体验专家）
+  style.textContent = `/*dyhlf-v17.0-AI3 · 视觉草案 v2（达芬奇-视觉体验专家）
   基于：诺曼《交互规格 v16》§3.1 DOM + §5 组件规范 · 集成契约 v1（含修订：BASE 运行时量取、尺寸自由）
   落码方式：整块并入 content.js style 模板；含自清理标记（头部 dyhlf 注释 + #dy-fab 规则）
   依赖：--ac / --ac-rgb 由引擎 _applyTheme 注入（需同步扩展到 #dy-fab，1 行，见规格 §7）
   品牌色 tint 一律 rgba(var(--ac-rgb),x)，自动跟主题，零引擎改动 */
-#dy{
+#dy,#dy-fab{
   --w-p:224px;
   --ac:#FF3B5C;--ac-rgb:255,59,92;
   --t1:rgba(255,255,255,.96);--t2:rgba(255,255,255,.70);--t3:rgba(255,255,255,.48);
@@ -852,7 +1009,7 @@
   --f: -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
 }
 /* ============ 面板骨架 ============ */
-#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(16px) saturate(2.2);-webkit-backdrop-filter:blur(16px) saturate(2.2);border-radius:20px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;user-select:none;box-shadow:0 16px 48px rgba(0,0,0,.40),0 2px 10px rgba(0,0,0,.22);zoom:1;animation:dyIn .18s cubic-bezier(.2,.9,.3,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(16px) saturate(2.2);-webkit-backdrop-filter:blur(16px) saturate(2.2);border-radius:20px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;user-select:none;box-shadow:0 16px 48px rgba(0,0,0,.30),0 2px 10px rgba(0,0,0,.22);zoom:1;animation:dyIn .18s cubic-bezier(.2,.9,.3,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 #dy::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px rgba(255,255,255,.05)}
 #dy .bd{padding:0}
 /* ============ A 状态层：标题 + 运行开关 ============ */
@@ -875,6 +1032,7 @@
 #dy .st:has(.m.cb)::before{background:var(--c-info)}
 #dy .st:has(.m.cp)::before{background:var(--c-pink)}
 #dy .st:has(.m.cy)::before{background:var(--c-warn)}
+#dy .st:has(.m.ca)::before{background:var(--ac)}
 #dy .st .m{font-size:16px;font-weight:700;letter-spacing:.2px;line-height:1.25;font-variant-numeric:tabular-nums;color:var(--t1);animation:dyStIn .12s ease-out}
 #dy .st .s{font-size:11px;color:var(--t2);margin-top:2px;animation:dyStIn .12s ease-out;min-height:0}
 #dy .m.cg{color:var(--c-ok)}
@@ -954,16 +1112,12 @@
 #dy .rs::before{content:'';position:absolute;inset:-7px}/* 命中区扩展 */
 #dy:hover .rs{opacity:.7}
 #dy .rs:hover{opacity:1}
-  /* ============ FAB：squircle 玻璃 + 漏斗图标 + 三态角标 ============ */
-  #dy-fab{position:fixed;left:20px;top:36px;width:40px;height:40px;border-radius:13px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);box-shadow:0 8px 24px rgba(0,0,0,.5);transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .18s;touch-action:none;padding:0}
+  /* ============ FAB：squircle 玻璃 + 漏斗图标（v16.6 [1] 三态角标已删）============ */
+  #dy-fab{position:fixed;left:20px;top:36px;width:40px;height:40px;border-radius:13px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);box-shadow:0 8px 24px rgba(0,0,0,.35);transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .18s;touch-action:none;padding:0}
   #dy-fab::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
   #dy-fab:hover{transform:scale(1.07);border-color:rgba(var(--ac-rgb),.55)}
   #dy-fab:active{transform:scale(.94)}
   #dy-fab svg{width:18px;height:18px;color:var(--ac);filter:drop-shadow(0 2px 5px rgba(var(--ac-rgb),.35))}
-  #dy-fab .badge{position:absolute;top:-3px;right:-3px;width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 2px #0b0c11;transition:opacity .2s}
-  #dy-fab .badge.warn{background:var(--c-warn)}
-  #dy-fab .badge.back{background:var(--c-back)}
-  #dy-fab .badge.stop{background:#8A8F99}
   /* ============ 焦点可见性（键盘用户）============ */
   #dy :focus-visible,#dy-fab:focus-visible{outline:2px solid rgba(255,255,255,.55);outline-offset:2px}
   #dy .sl:focus-visible{outline-offset:6px}
@@ -973,7 +1127,7 @@
 @keyframes dyStIn{from{opacity:0;transform:translateX(4px)}to{opacity:1;transform:none}}
 @keyframes dyMenuIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  #dy{background:rgba(13,15,20,.82)}
+  #dy,#dy-fab{background:rgba(13,15,20,.82)}
   #dy .menu{background:rgba(18,20,25,.92)}
 }
 `;
@@ -982,7 +1136,7 @@
   panel.id = 'dy';
   panel.innerHTML = `
 <div class="hd" id="dd">
-    <span class="t" title="快捷键：W/上滚 回看 · S/下滚 继续&#10;点击标题或版本号可重启脚本">别做算法里的困兽</span>
+    <span class="t" title="快捷键：W/上滚 回看 · S/下滚 继续 · 空格=暂停/恢复（暂停时自动刷也停）&#10;点击标题或版本号可重启脚本">别做算法里的困兽</span>
   <div class="hact">
     <div class="sw on" id="run" role="switch" aria-checked="true" title="开始/停止"></div>
   </div>
@@ -993,7 +1147,7 @@
     <div class="s" id="ss"></div>
   </div>
   <div class="guide" id="dy-guide" style="display:none">
-    <span class="gt">低赞视频将自动跳过 · 拖滑块调门槛 · W/S 回看/继续</span>
+    <span class="gt">低赞视频将自动跳过 · 拖滑块调门槛 · W/S 回看/继续 · 空格=暂停/恢复</span>
     <button class="gok" id="dy-guide-ok">知道了</button>
   </div>
   <div class="slw">
@@ -1029,17 +1183,20 @@
       <i data-c="255,59,92" data-hex="#FF3B5C" style="background:#FF3B5C"></i>
       <i data-c="78,155,255" data-hex="#4E9BFF" style="background:#4E9BFF"></i>
       <i data-c="44,232,160" data-hex="#2CE8A0" style="background:#2CE8A0"></i>
+      <i data-c="178,102,255" data-hex="#B266FF" style="background:#B266FF"></i>
+      <i data-c="255,149,0" data-hex="#FF9500" style="background:#FF9500"></i>
+      <i data-c="34,222,226" data-hex="#22DEE2" style="background:#22DEE2"></i>
     </div>
-    <div class="ver">v16.4</div>
+    <div class="ver">v17.0-AI3</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
   document.body.appendChild(panel);
   const fab = document.createElement('button');
   fab.id = 'dy-fab';
-  // 16.0：FAB 图标内联 SVG（漏斗，跟主题色）+ 三态角标 span（初始隐藏）
+  // v16.6 [1]：FAB 图标内联 SVG（漏斗，跟主题色）；三态角标已按用户要求整链删除
   fab.title = '点击展开筛选面板，可拖动';
-  fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5h17l-6.8 7.7v6.1l-3.4 2v-8.1L3.5 5z"/></svg><span class="badge" id="dy-fab-badge" hidden></span>';
+  fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5h17l-6.8 7.7v6.1l-3.4 2v-8.1L3.5 5z"/></svg>';
   document.body.appendChild(fab);
   // v14.1：启动时恢复面板位置、zoom、fab位置、打开状态
   function restorePanelLayout() {
@@ -1104,7 +1261,6 @@
   const _menu = document.getElementById('dy-menu');
   const _moreBtn = document.getElementById('dy-more-btn');
   const _restartMi = document.getElementById('dy-restart');
-  const _fabBadge = document.getElementById('dy-fab-badge');
 
   // v16.0：首次引导条——dyhlf_seen 无值时展示；「知道了」写标记并 0.2s 高度动画收起，此后不再出现
   if (_firstRun && _guide) _guide.style.display = '';
@@ -1135,8 +1291,10 @@
   // v16.0：拖动时浮于 thumb 上方的档位气泡，松手 0.8s 消散（顶行 #slv 保留，双保险）
   let _bubT = null;
   function showBub(){
+    // v17.0-AI3 [2]：回退 v16.7 的 ÷zoom——实测现版 Chrome（zoom 已标准化）后代 clientWidth
+    // 不含缩放、style.left 同为未缩放本地px，两者同坐标系直读即准；÷zoom 反致偏移（实测 84.4≠128）
     const w = _slwrap.clientWidth;
-    const x = (+$.sl.value / (THRESHOLD_PRESETS.length - 1)) * (w - 16) + 8; // 16 = thumb 直径
+    const x = (+$.sl.value / (THRESHOLD_PRESETS.length - 1)) * (w - 16) + 8;
     _bub.hidden = false;
     _bub.textContent = '≥' + fmtThreshold(THRESHOLD_PRESETS[+$.sl.value]);
     _bub.style.left = x + 'px';
@@ -1151,12 +1309,17 @@
   function applyThreshold(i){
     cfg.threshold = THRESHOLD_PRESETS[i] || cfg.threshold;
     $.slv.textContent = '≥' + fmtThreshold(cfg.threshold);
+    // v16.6 [7]：拖阈值后当前视频立即重判（invalidate 已作废在途判定，这里补上重新触发）
+    state.activeVid = null; state.handling = false;
     saveCfg(); invalidate(); markDirty(); render();
   }
   $.sl.value = presetIndex(cfg.threshold);
   $.slv.textContent = '≥' + fmtThreshold(cfg.threshold);
   paintSlider();
   $.sl.addEventListener('input', () => { applyThreshold(+$.sl.value); paintSlider(); showBub(); });
+  // v16.7 [5]：拖完滑杆即 blur 交还焦点——否则焦点滞留在 range 上，W/S/↑↓ 会被 onKey 的 INPUT 守卫拦截，
+  // 用户体感"快捷键失灵"；键盘调档（Tab 聚焦+方向键）无 pointerup，不受影响
+  $.sl.addEventListener('pointerup', () => { try { $.sl.blur(); } catch(e){} });
 
   function saveFabPos() {
     try {
@@ -1205,6 +1368,7 @@
     tryPin(10);
   })();
   let pressId = 0, curPress = 0, draggedThisPress = false;
+  let _ppT = null; // v17.0-AI1：面板位置落盘防抖——拖拽 mousemove/touchmove 每帧都调 placePanel，不能每帧同步写 localStorage
   function placePanel(){
     const fr=fab.getBoundingClientRect();
     const pr=panel.getBoundingClientRect();
@@ -1216,7 +1380,8 @@
     let pt = fr.top;
     if (pt + ph > vh - 4) pt = Math.max(4, vh - 4 - ph);
     panel.style.left=(pl/z)+'px'; panel.style.top=(pt/z)+'px';
-    try{localStorage.setItem('dyhlf_pp',JSON.stringify({l:panel.style.left,t:panel.style.top}))}catch(e){}
+    clearTimeout(_ppT);
+    _ppT = setTimeout(() => { try{localStorage.setItem('dyhlf_pp',JSON.stringify({l:panel.style.left,t:panel.style.top}))}catch(e){} }, 200);
   }
   const SNAP = 160;
   function trySnap(){
@@ -1315,7 +1480,6 @@
     $.rfem.setAttribute('aria-pressed', String(!!cfg.keepFemale));
     $.rmus.setAttribute('aria-pressed', String(!!cfg.keepMusic));
     $.rj.setAttribute('aria-pressed', String(!!cfg.autoJ));
-    // v16.4：悬浮球三态角标由 render() 内 _fabBadge 同步驱动（状态卡仍完整呈现 运行/暂停/回看/评论中）
   }
   // v14.1：脏标记保留（避免每次 tick 都刷 UI），但所有 state 变更处都补了 markDirty()
   let _dirty = true;
@@ -1368,37 +1532,36 @@
     $.tNow.textContent = '本次 ' + fmtDur(Math.floor(_visibleMs/1000));
     $.tSave.innerHTML = '已省 今日 <span class="hi">' + fmtDur(_timeStats.today) + '</span> · 累计 ' + fmtDur(_timeStats.total);
     const r=state.lastResult||{};
+    // v16.6 [4]：「已停止」最优先——否则空格暂停后关运行开关，面板恒显「暂停」
+    //（pollPauseState 因 cfg.enabled=false 停跑，不再纠偏）；已停止/主页副文案补全（v16.6 [11]）
+    if(!cfg.enabled){setSt('m cy','已停止','静默中 · 打开开关恢复');return;}
     if(commentsOpen()){setSt('m cy','评论中','自动刷已暂停');return;}
-    if(state.authorPage){setSt('m cp','主页','');return;}
+    if(state.authorPage){setSt('m cp','主页','作者主页 · 自动停刷');return;}
     if(userPauseMode){setSt('m cy','暂停','暂停中 · 按空格播放或按 S 继续');return;} // v16.0：退出方式提示（§4.6）
     if(userBackMode){setSt('m cp','回看','回看中 · 按 S 或下滚继续');return;} // v16.0：退出方式提示（§4.6）
     if(r.verdict==='userback'){setSt('m cp','回看','回看中 · 按 S 或下滚继续');return;} // v14.2：补 userback 分支，不再落到"读取中"
-    if(!cfg.enabled){setSt('m cy','已停止','');return;}
     // v16.0：连跳 turbo 标注（§4.6/§6，引擎拼装项——库珀已裁定准予随版落码）
     const _turboSs = state.consecutiveSkips >= 2 ? '连跳加速中' : null;
     if(r.verdict==='live'){setSt('m cb','直播',_turboSs||'');}
     else if(r.verdict==='game-shopping'){setSt('m cr','购物',_turboSs||'');}
     else if(r.verdict==='male-skip'){setSt('m cr','男性',_turboSs||'');}
     else if(r.verdict==='music-keep'){setSt('m cg','音乐保留',_turboSs||'汽水音乐');}
-    else if(r.verdict==='female-keep'){setSt('m ca','女生保留',_turboSs||(r.hit?'命中「'+r.hit+'」':''));}
+    else if(r.verdict==='female-keep'){setSt('m cp','女生保留',_turboSs||(r.hit?'命中「'+r.hit+'」':''));} // v16.7 [1]：ca 随主题变（红主题下"保留"呈跳过红），回归粉=女生契约，与"女生"计数同色
     else if(r.verdict==='keep'){setSt('m cg',fmt(r.value)+'赞',_turboSs||'达标');}
     else if(r.verdict==='low'){setSt('m cr',fmt(r.value)+'赞',_turboSs||'低赞');}
     else{setSt('m cy','读取中','');}
-    if (_fabBadge) {
-      let _bk = null;
-      if (!cfg.enabled) _bk = 'stop';
-      else if (userBackMode) _bk = 'back';
-      else if (userPauseMode || commentsOpen()) _bk = 'warn';
-      if (_bk) { _fabBadge.hidden = false; _fabBadge.className = 'badge ' + _bk; }
-      else { _fabBadge.hidden = true; _fabBadge.className = 'badge'; }
-    }
+    // v16.6 [1]：三态角标同步块已删（因 render 各状态分支提前 return，原块本就是死代码）
   }
   function toggleOpt(key, needRecheck){
     cfg[key]=!cfg[key];saveCfg();invalidate();
     if(needRecheck){state.activeVid=null;state.handling=false;}
     markDirty();render();
   }
-  $.run.onclick=()=>toggleOpt('enabled',false);
+  $.run.onclick=()=>{
+    toggleOpt('enabled',false);
+    // v16.6 [4]：关停时清掉暂停/回看态（恢复运行时由 pollPauseState 重新同步真实暂停态）
+    if (!cfg.enabled) { userPauseMode = false; userBackMode = false; backArmed = false; markDirty(); render(); }
+  };
   $.rlive.onclick=()=>toggleOpt('skipLive',true);
   $.rfem.onclick=()=>toggleOpt('keepFemale',true);
   $.rmus.onclick=()=>toggleOpt('keepMusic',true);
@@ -1408,9 +1571,13 @@
   //     （'#'+c 历史缺陷产生的脏值映射默认主题）；
   //   ② 本文件内不再出现 '255,23,68'/'21,101,255' 默认串（基线 L1100/L1101 换新值）；
   //   ③ 主题点 data-c/data-hex 已换新值（见上方模板）。
+  // v16.6 [3]：主题点保留 6 色，但主题色只派生 --ac 强调色（撤销 v16.5 ⑨ 的语义色全量着色），
+  //   语义色回 CSS 写死（见 _applyTheme 内注释），保证跨主题辨识度。
   const _THEME_DEFAULT = '255,59,92';
   const _THEME_OK_RE = /^\d{1,3},\d{1,3},\d{1,3}$/;
   const _migrateTheme = v => v === '255,23,68' ? _THEME_DEFAULT : (v === '21,101,255' ? '78,155,255' : v);
+  // v16.6 [3]：语义色不再由主题 HSL 派生（撤销 v16.5 ⑨）——红主题下保留/跳过/暂停几乎同色、
+  // 蓝主题下 danger 变青，语义辨识度崩塌；恢复 CSS 写死六色（#dy 变量块），主题色只管 --ac 强调色
   const _applyTheme = (c, persist) => {
     if (!_THEME_OK_RE.test(c || '')) c = _THEME_DEFAULT;
     c = _migrateTheme(c);
@@ -1450,6 +1617,13 @@
     // v14.1：resize 时不重置 zoom，只重新调整面板位置
     onWin('resize', () => {
       vw = innerWidth; vh = innerHeight;
+      // v16.7 [3]：窗口变小（半屏贴靠）或浏览器放大后 FAB 可能整个落在视口外且重载依旧进不来，钳回可视区
+      if (fab.style.left !== '') {
+        const _fl = parseFloat(fab.style.left) || 0, _ft = parseFloat(fab.style.top) || 0;
+        const _nl = Math.max(0, Math.min(vw - fab.offsetWidth, _fl));
+        const _nt = Math.max(0, Math.min(vh - fab.offsetHeight, _ft));
+        if (_nl !== _fl || _nt !== _ft) { fab.style.left = _nl + 'px'; fab.style.top = _nt + 'px'; saveFabPos(); }
+      }
       if (panel.style.display !== 'none') placePanel();
     });
   })();
@@ -1556,6 +1730,11 @@
       clearTimeout(_saveTimeT);   // v15.0：时间账本防抖写盘
       clearTimeout(_bubT);        // v16.0：滑块气泡隐藏定时器
       clearTimeout(_confirmT);    // v16.0：清除确认还原定时器
+      clearInterval(_pathT);      // v16.5 ③：100ms 路径监听
+      _pinTimers.forEach(clearTimeout); _pinTimers.length = 0; // v16.6 [10]：FAB 吸附重试定时器补清
+      // v17.0-AI1：位置落盘防抖收尾——停用/重启即刷最终位置（此刻 panel 尚未 remove，读到的是当前值）
+      clearTimeout(_ppT);
+      try { localStorage.setItem('dyhlf_pp', JSON.stringify({l:panel.style.left,t:panel.style.top})); } catch(e){}
       invalidate();
       // v14.2：统一清理所有 document/window 级监听（缩放/点外关闭/resize 等）
       // v16.0：同清单含 ResizeObserver 断开与 countUp 代际 token 失效
