@@ -1,6 +1,13 @@
 (function __dyhlfBoot() {
   'use strict';
-  // dyhlf v17.1 · 三AI融合终版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  // dyhlf v17.2 · 六AI-UI融合终版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  //   v17.2 仅动 UI 层，收编六路迭代并消解冲突：AI1 布局（区块间距统一12px/状态卡副行固定占位防跳）、
+  //   AI2 视觉（状态卡与统计格统一浮起表面/FAB 顶光渐变+双层柔影/菜单与气泡阴影收敛）、
+  //   AI3 动效（面板关闭 120ms 淡出与入场对称/状态色条 0.25s 过渡/菜单项按压反馈）、
+  //   AI4 控件（控件圆角归一 --r-ctrl/按钮按压补强调色光晕/底部栏与菜单对齐 14px 内容列）、
+  //   AI5 字体（标题退后 13px·状态主文案 18px·统计 14px 的三级信息层级）、
+  //   AI6 响应式（载入即钳回视口救屏外坐标/窄窗 max-width+min-width:0 抗挤压兜底）；
+  //   筛选引擎/点赞读取/视频ID/自动跳转/tick/actionToken/评论/作者页/回看/J/unknown/快捷键语义零改动
   //   v16.6 基线，收编 AI1/AI2/AI3 三版一致修改 + AI1 落盘防抖（AI3 终检收编）；
   //   唯一分歧「阈值气泡定位÷zoom」按 AI3 实测回退，本版维持 v16.6 原实现
   //   [1] isLiveFast 不稳分支补齐安全语义：scanned<5 时与"空矩形"分支同款——返回 false 且不缓存。
@@ -44,7 +51,7 @@
   //   8) 评论打开时 exitUserBack 不自动 play（滚评论不再误触发播放）
   //   9) 主题全量着色：全部语义色由主题色 HSL 派生（状态卡/计数/FAB 角标随主题换装），
   //      新增 紫/橙/青 主题点共 6 色；女生保留状态条补主题色左缘
-  const VERSION = '17.1';
+  const VERSION = '17.2';
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
@@ -992,7 +999,7 @@
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v17.1 · 视觉草案 v2（达芬奇-视觉体验专家）
+  style.textContent = `/*dyhlf-v17.2 · 视觉草案 v2（达芬奇-视觉体验专家）
   基于：诺曼《交互规格 v16》§3.1 DOM + §5 组件规范 · 集成契约 v1（含修订：BASE 运行时量取、尺寸自由）
   落码方式：整块并入 content.js style 模板；含自清理标记（头部 dyhlf 注释 + #dy-fab 规则）
   依赖：--ac / --ac-rgb 由引擎 _applyTheme 注入（需同步扩展到 #dy-fab，1 行，见规格 §7）
@@ -1008,13 +1015,13 @@
   --f: -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
 }
 /* ============ 面板骨架 ============ */
-#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(16px) saturate(2.2);-webkit-backdrop-filter:blur(16px) saturate(2.2);border-radius:20px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;user-select:none;box-shadow:0 16px 48px rgba(0,0,0,.30),0 2px 10px rgba(0,0,0,.22);zoom:1;animation:dyIn .18s cubic-bezier(.2,.9,.3,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(16px) saturate(2.2);-webkit-backdrop-filter:blur(16px) saturate(2.2);border-radius:20px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;max-width:calc(100vw - 8px);user-select:none;box-shadow:0 16px 48px rgba(0,0,0,.30),0 2px 10px rgba(0,0,0,.22);zoom:1;animation:dyIn .18s cubic-bezier(.2,.9,.3,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 #dy::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px rgba(255,255,255,.05)}
 #dy .bd{padding:0}
 /* ============ A 状态层：标题 + 运行开关 ============ */
-#dy .hd{padding:13px 14px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+#dy .hd{padding:13px 14px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 #dy .hact{display:flex;align-items:center}
-#dy .hd .t{font-size:15px;font-weight:600;letter-spacing:.4px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+#dy .hd .t{font-size:13px;font-weight:500;letter-spacing:.3px;color:var(--t2);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
 /* 运行呼吸灯：纯 CSS（.t::before + :has(.sw.on)），零 DOM/JS 改动 */
 #dy .hd .t::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--t3);margin-right:7px;vertical-align:2px;transition:background .2s}
 #dy .hd:has(.sw.on) .t::before{background:var(--ac);animation:dyBreath 2.2s ease-out infinite}
@@ -1024,16 +1031,16 @@
 #dy .sw.on{background:var(--ac)}
 #dy .sw.on::after{transform:translateX(18px)}
 /* ============ A 状态层：状态卡 ============ */
-#dy .st{position:relative;margin:0 14px 11px;padding:9px 12px 9px 15px;background:var(--glass-2);border:1px solid var(--line-2);border-radius:var(--r-card);overflow:hidden}
-#dy .st::before{content:'';position:absolute;left:0;top:16%;bottom:16%;width:3px;border-radius:0 3px 3px 0;background:var(--t3)}
+#dy .st{position:relative;margin:0 14px 12px;padding:9px 12px 9px 15px;background:var(--glass-2);border:1px solid var(--line-2);border-radius:var(--r-card);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+#dy .st::before{content:'';position:absolute;left:0;top:16%;bottom:16%;width:3px;border-radius:0 3px 3px 0;background:var(--t3);transition:background .25s ease}
 #dy .st:has(.m.cg)::before{background:var(--c-ok)}
 #dy .st:has(.m.cr)::before{background:var(--c-bad)}
 #dy .st:has(.m.cb)::before{background:var(--c-info)}
 #dy .st:has(.m.cp)::before{background:var(--c-pink)}
 #dy .st:has(.m.cy)::before{background:var(--c-warn)}
 #dy .st:has(.m.ca)::before{background:var(--ac)}
-#dy .st .m{font-size:16px;font-weight:700;letter-spacing:.2px;line-height:1.25;font-variant-numeric:tabular-nums;color:var(--t1);animation:dyStIn .12s ease-out}
-#dy .st .s{font-size:11px;color:var(--t2);margin-top:2px;animation:dyStIn .12s ease-out;min-height:0}
+#dy .st .m{font-size:18px;font-weight:700;letter-spacing:.2px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--t1);animation:dyStIn .12s ease-out}
+#dy .st .s{font-size:11px;color:var(--t2);margin-top:2px;animation:dyStIn .12s ease-out;min-height:1.5em;overflow-wrap:anywhere}
 #dy .m.cg{color:var(--c-ok)}
 #dy .m.cr{color:var(--c-bad)}
 #dy .m.cb{color:var(--c-info)}
@@ -1041,7 +1048,7 @@
 #dy .m.cy{color:var(--c-warn)}
 #dy .m.ca{color:var(--ac)}
 /* ============ A 状态层：首次引导条 ============ */
-#dy .guide{margin:0 14px 11px;padding:8px 10px;background:rgba(255,197,61,.08);border:1px solid rgba(255,197,61,.26);border-radius:var(--r-card);display:flex;align-items:center;gap:8px;overflow:hidden}
+#dy .guide{margin:0 14px 12px;padding:8px 10px;background:rgba(255,197,61,.08);border:1px solid rgba(255,197,61,.26);border-radius:var(--r-card);display:flex;align-items:center;gap:8px;overflow:hidden}
 #dy .guide .gt{flex:1;font-size:11px;line-height:1.5;color:var(--t2)}
 #dy .guide .gok{flex:none;font-family:inherit;font-size:11px;font-weight:600;color:var(--c-warn);background:rgba(255,197,61,.14);border:none;border-radius:8px;padding:3px 9px;cursor:pointer;transition:background .15s}
 #dy .guide .gok:hover{background:rgba(255,197,61,.24)}
@@ -1058,46 +1065,47 @@
 #dy .sl:hover::-webkit-slider-thumb{transform:scale(1.12)}
 #dy .sl:active::-webkit-slider-thumb{transform:scale(1.25);box-shadow:0 0 0 8px rgba(var(--ac-rgb),.18)}
 #dy .sl::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 6px rgba(0,0,0,.5);cursor:pointer}
-#dy .bub{position:absolute;bottom:calc(100% + 5px);transform:translateX(-50%);background:var(--menu);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--t1);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+#dy .bub{position:absolute;bottom:calc(100% + 5px);transform:translateX(-50%);background:var(--menu);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--t1);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 4px 12px rgba(0,0,0,.36)}
 #dy .bub::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:var(--menu)}
 #dy .bub.show{opacity:1}
 #dy .sle{display:flex;justify-content:space-between;font-size:11px;color:var(--t3)}
 /* ============ B 控制层：策略开关 2×2（图标化）============ */
-#dy .rg{display:grid;grid-template-columns:1fr 1fr;gap:8px 6px;padding:0 14px;margin-bottom:12px}
-#dy .rg button{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;height:32px;border-radius:var(--r-ctrl);border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--t2);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:color .16s,border-color .16s,background .16s,transform .1s;-webkit-font-smoothing:antialiased}
+#dy .rg{display:grid;grid-template-columns:1fr 1fr;gap:8px 6px;padding:0 14px;margin-bottom:12px;min-width:0}
+#dy .rg button{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;height:32px;border-radius:var(--r-ctrl);border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--t2);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:color .16s,border-color .16s,background .16s,transform .1s;-webkit-font-smoothing:antialiased;min-width:0;white-space:nowrap}
 #dy .rg button::after{content:'';position:absolute;inset:-4px 0;border-radius:12px}/* 命中区扩至 40px 高 */
 #dy .rg button svg{width:12px;height:12px;flex:none;opacity:.75;transition:opacity .16s}
 #dy .rg button:hover{color:var(--t1);border-color:rgba(255,255,255,.22)}
-#dy .rg button:active{transform:scale(.95)}
+#dy .rg button:active{transform:scale(.95);box-shadow:0 0 0 4px rgba(var(--ac-rgb),.16)}
 #dy .rg button.on{color:var(--ac);font-weight:600;border-color:rgba(var(--ac-rgb),.5);background:rgba(var(--ac-rgb),.14)}
 #dy .rg button.on svg{opacity:1}
 /* ============ C 数据层：统计四格 + 时间账本 ============ */
-#dy .nm{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 14px;margin-bottom:10px}
-#dy .nm>div{background:var(--glass-2);border-radius:var(--r-ctrl);padding:7px 2px 6px;text-align:center}
-#dy .nm .v{font-size:16px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+#dy .nm{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 14px;margin-bottom:12px;min-width:0}
+#dy .nm>div{background:var(--glass-2);border:1px solid var(--line-2);border-radius:var(--r-ctrl);padding:7px 2px 6px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);min-width:0}
+#dy .nm .v{font-size:14px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
 #dy .nm .l{font-size:11px;color:var(--t3);margin-top:3px;font-weight:500;letter-spacing:.5px}
 #dy .cg{color:var(--c-ok)}
 #dy .cr{color:var(--c-bad)}
 #dy .cb{color:var(--c-info)}
 #dy .cp{color:var(--c-pink)}
 #dy .cy{color:var(--c-warn)}
-#dy .time{display:flex;flex-direction:column;gap:3px;padding:0 14px 12px;font-size:11px;letter-spacing:.2px}
+#dy .time{display:flex;flex-direction:column;gap:3px;padding:0 14px 12px;font-size:11px;letter-spacing:.2px;overflow-wrap:anywhere}
 #dy #tNow{color:var(--t2)}
 #dy #tSave{color:var(--t3)}
 #dy .time .hi{color:var(--ac);font-weight:600;text-shadow:0 0 12px rgba(var(--ac-rgb),.45)}
 /* ============ D 底部：更多菜单 + 主题点 + 版本 ============ */
-#dy .ft{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 10px 10px;border-top:1px solid var(--line-2)}
+#dy .ft{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 14px 12px;border-top:1px solid var(--line-2)}
 #dy .more{position:relative;justify-self:start}
-#dy .mbtn{position:relative;width:28px;height:28px;border-radius:9px;border:none;background:none;color:var(--t2);font-family:inherit;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,background .15s}
+#dy .mbtn{position:relative;width:28px;height:28px;border-radius:var(--r-ctrl);border:none;background:none;color:var(--t2);font-family:inherit;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,background .15s}
 #dy .mbtn::after{content:'';position:absolute;inset:-6px;border-radius:12px}/* 命中区 40px */
 #dy .mbtn:hover{color:var(--t1);background:rgba(255,255,255,.08)}
-#dy .mbtn:active{transform:scale(.95)}
-#dy .menu{position:absolute;bottom:calc(100% + 8px);left:-4px;min-width:132px;background:var(--menu);backdrop-filter:blur(14px) saturate(2.0);-webkit-backdrop-filter:blur(14px) saturate(2.0);border:1px solid var(--line);border-radius:12px;padding:4px;box-shadow:0 12px 40px rgba(0,0,0,.55);animation:dyMenuIn .15s ease-out}
-#dy .menu .mi{font-size:12px;padding:8px 10px;border-radius:8px;color:var(--t1);cursor:pointer;white-space:nowrap;transition:background .12s}
+#dy .mbtn:active{transform:scale(.95);box-shadow:0 0 0 4px rgba(var(--ac-rgb),.16)}
+#dy .menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:132px;background:var(--menu);backdrop-filter:blur(14px) saturate(2.0);-webkit-backdrop-filter:blur(14px) saturate(2.0);border:1px solid var(--line);border-radius:12px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,.42),0 2px 8px rgba(0,0,0,.22);animation:dyMenuIn .15s ease-out}
+#dy .menu .mi{font-size:12px;padding:8px 10px;border-radius:8px;color:var(--t1);cursor:pointer;white-space:nowrap;transition:background .12s,transform .1s}
 #dy .menu .mi:hover{background:rgba(255,255,255,.08)}
 #dy .menu .mi.danger{color:var(--c-bad)}
 #dy .menu .mi.danger:hover{background:rgba(255,92,122,.12)}
 #dy .menu .mi.danger.confirm{background:var(--c-bad);color:#fff;font-weight:600}
+#dy .menu .mi:active{transform:scale(.97);background:rgba(255,255,255,.14)}
 #dy .menu .sep{height:1px;margin:4px 8px;background:var(--line-2)}
 #dy .tm{display:flex;align-items:center;gap:7px;justify-self:center}
 #dy .tm i{position:relative;width:10px;height:10px;border-radius:50%;cursor:pointer;transition:transform .15s,box-shadow .15s}
@@ -1112,8 +1120,8 @@
 #dy:hover .rs{opacity:.7}
 #dy .rs:hover{opacity:1}
   /* ============ FAB：squircle 玻璃 + 漏斗图标（v16.6 [1] 三态角标已删）============ */
-  #dy-fab{position:fixed;left:20px;top:36px;width:40px;height:40px;border-radius:13px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);box-shadow:0 8px 24px rgba(0,0,0,.35);transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .18s;touch-action:none;padding:0}
-  #dy-fab::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
+  #dy-fab{position:fixed;left:20px;top:36px;width:40px;height:40px;border-radius:13px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.02) 60%,rgba(255,255,255,0)),var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);box-shadow:0 6px 16px rgba(0,0,0,.28),0 1px 4px rgba(0,0,0,.20);transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .18s;touch-action:none;padding:0}
+  #dy-fab::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 0 0 1px rgba(255,255,255,.05)}
   #dy-fab:hover{transform:scale(1.07);border-color:rgba(var(--ac-rgb),.55)}
   #dy-fab:active{transform:scale(.94)}
   #dy-fab svg{width:18px;height:18px;color:var(--ac);filter:drop-shadow(0 2px 5px rgba(var(--ac-rgb),.35))}
@@ -1125,6 +1133,8 @@
 @keyframes dyBreath{0%{box-shadow:0 0 0 0 rgba(var(--ac-rgb),.4)}75%{box-shadow:0 0 0 5px rgba(var(--ac-rgb),0)}100%{box-shadow:0 0 0 6px rgba(var(--ac-rgb),0)}}
 @keyframes dyStIn{from{opacity:0;transform:translateX(4px)}to{opacity:1;transform:none}}
 @keyframes dyMenuIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes dyOut{to{opacity:0;transform:translateY(6px) scale(.97)}}
+#dy.closing{animation:dyOut .12s ease-in both;pointer-events:none}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   #dy,#dy-fab{background:rgba(13,15,20,.82)}
   #dy .menu{background:rgba(18,20,25,.92)}
@@ -1186,7 +1196,7 @@
       <i data-c="255,149,0" data-hex="#FF9500" style="background:#FF9500"></i>
       <i data-c="34,222,226" data-hex="#22DEE2" style="background:#22DEE2"></i>
     </div>
-    <div class="ver">v17.1</div>
+    <div class="ver">v17.2</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
@@ -1226,7 +1236,8 @@
     } catch(e) { _panelOpen = false; }
   }
   function savePanelOpen() {
-    try { localStorage.setItem('dyhlf_open', panel.style.display !== 'none' ? '1' : '0'); } catch(e) {}
+    // v17.2：改记 _panelOpen——关闭淡出期间 display 仍是 block，读 display 会把"已关"存成"开着"
+    try { localStorage.setItem('dyhlf_open', _panelOpen ? '1' : '0'); } catch(e) {}
   }
   // v16.0：首次引导标记（dyhlf_seen 无值 → 首次；面板强制自动展开一次，不写 dyhlf_open）
   let _firstRun = false;
@@ -1392,7 +1403,7 @@
     if (Math.hypot(fr.left - r.left, fr.top - r.top) > SNAP) return;
     if (!pinToLogo()) return;
     if (panel.style.display !== 'none') {
-      panel.style.display = 'none';
+      closePanelAnim(); // v17.2：吸附收起也走淡出
       _panelOpen = false;
     }
   }
@@ -1425,14 +1436,29 @@
     }
   },{passive:false});
   fab.addEventListener('touchend',e=>{if(tmax>2){draggedThisPress=true;e.preventDefault();trySnap();saveFabPos();}tId=null;tmax=0;});
+  // v17.2：面板关闭补 120ms 淡出（dyOut），与入场 dyIn 对称；closing 类守卫防陈旧定时器误关重开的面板
+  let _closeT = null;
+  function closePanelAnim(){
+    if (panel.style.display === 'none') return;
+    panel.classList.add('closing');
+    clearTimeout(_closeT);
+    _closeT = setTimeout(() => {
+      if (panel.classList.contains('closing')) {
+        panel.classList.remove('closing');
+        panel.style.display = 'none';
+      }
+    }, 120);
+  }
   fab.onclick=()=>{
     if(draggedThisPress && curPress===pressId){fab.dataset.dragged='';return;}
     fab.dataset.dragged='';
-    const open=panel.style.display!=='none';
+    // v17.2：判定用 _panelOpen——淡出进行中（display 仍 block）再点 FAB = 取消关闭、重新打开
+    const open=_panelOpen && panel.style.display!=='none';
     if(open){
-      panel.style.display='none'; _panelOpen=false;
+      closePanelAnim(); _panelOpen=false; // v17.2：关闭走淡出
       pinToLogo();
     }else{
+      clearTimeout(_closeT); panel.classList.remove('closing');
       panel.style.display='block';
       placePanel();
       _panelOpen=true;
@@ -1626,6 +1652,18 @@
       if (panel.style.display !== 'none') placePanel();
     });
   })();
+  // v17.2：载入即钳回视口——保存坐标来自更大窗口/副屏时，重载到小窗后 resize 不触发（仅尺寸变化才触发），
+  // FAB/面板会整个卡在屏外进不来；界内坐标零改动，仅越界被拉回
+  (() => {
+    if (fab.dataset.customPos === '1') {
+      const fw = fab.offsetWidth || 40, fh = fab.offsetHeight || 40;
+      const fx = parseFloat(fab.style.left) || 0, fy = parseFloat(fab.style.top) || 0;
+      const nx = Math.max(0, Math.min(innerWidth - fw, fx));
+      const ny = Math.max(0, Math.min(innerHeight - fh, fy));
+      if (nx !== fx || ny !== fy) { fab.style.left = nx + 'px'; fab.style.top = ny + 'px'; saveFabPos(); }
+    }
+    if (panel.style.display !== 'none') placePanel();
+  })();
   onDoc('mousedown',e=>{
     if (e.target.closest && e.target.closest('#dy-fab')) return; // 16.0：点 FAB 自身不触发点外逻辑
     if (_menu && !_menu.hidden && !(e.target.closest && e.target.closest('#dy-more'))) {
@@ -1716,6 +1754,8 @@
       document.body.appendChild(panel);
     }
     markDirty(); render();
+    clearTimeout(_closeT);
+    panel.classList.remove('closing');
     panel.style.display = _panelOpen ? 'block' : 'none';
   };
   const _uiObs = new MutationObserver(() => { _restoreUI(); });
@@ -1734,6 +1774,7 @@
       // v17.1：位置落盘防抖收尾——停用/重启即刷最终位置（此刻 panel 尚未 remove，读到的是当前值）
       clearTimeout(_ppT);
       try { localStorage.setItem('dyhlf_pp', JSON.stringify({l:panel.style.left,t:panel.style.top})); } catch(e){}
+      clearTimeout(_closeT); // v17.2：面板关闭淡出定时器
       invalidate();
       // v14.2：统一清理所有 document/window 级监听（缩放/点外关闭/resize 等）
       // v16.0：同清单含 ResizeObserver 断开与 countUp 代际 token 失效
