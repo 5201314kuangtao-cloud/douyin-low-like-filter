@@ -1,161 +1,23 @@
 (function __dyhlfBoot() {
   'use strict';
-  // dyhlf v19.7 · 芯片去波纹版（本行是热重启版本指纹，改动需与 VERSION 同步）
-  //   v19.7（用户实测反馈）：四策略芯片（颜值保留/自动清屏/音乐保留/保留直播）退出点击波纹
-  //   覆盖——它们已有果冻挤压+粒子+音效，不再叠波纹；其余按钮波纹不变
-  //   v19.6（用户实测反馈）：①拉满端特效改海浪——光带像海浪一样从左往右一波接一波推过阈值区，
-  //   按住不松手浪不停（rAF 循环+280ms 一波），松手/离端即停；单次撞击震保留（进场一下）
-  //   ②状态卡（暂停卡）不叠波纹——它自带果冻+涟漪，从波纹覆盖选择器中移除
-  //   v19.5（用户实测反馈）：①流光只扫阈值滑条区域（不再全面板）②拉满恢复单次震动
-  //   （_impactFx 一次 500ms 本就是单发；持续微震仍只在最小端）③全按钮波纹与调色盘
-  //   完全同款：14px 圆环从点击处 scale(.4)→scale(9) 淡出，480ms 同缓动
-  //   v19.4（用户实测反馈）：①修"从100万往上拉一直有bug"——尽头撞击方向还写死旧档位 9，
-  //   11 档后拉满时震动方向全错，已改随档位动态判断 ②拉满（500万）不再震动，改为流光特效：
-  //   一道强光从面板左侧扫到右侧（改用 _lightSweep）③音量上限 100%→200%（声音可翻倍）
-  //   ④主题点波纹特效推广到全部按钮：运行开关/四策略芯片/菜单项/引导按钮/FAB/统计格/音量图标
-  //   点击时都从点击处荡开一圈色波纹（本地坐标按面板 zoom 换算）
-  //   v19.3（用户实测反馈）：①撞尽头不再喷粒子（面板缩放后视口坐标换算不准，位置对不上；
-  //   保留震动+闪光+音效+彩带雨）②主题点波纹坐标按面板 zoom 换算修正（缩放≠1 时波纹错位）
-  //   v19.2（用户拍板）：①阈值滑条整体回退到弹力球之前的样子——原生滑条正常拖（白球/弹弓/
-  //   台球物理整链移除），保留 500万 档（11档）与尽头撞击+微震（接线本就在，恢复指针事件即活）
-  //   ②音效降密度：_tone 全局 60ms 节流 + 滑条过档音 130ms 节流，连拖不再突突突；其余音效不变
-  //   v19.1（用户实测反馈逐项）：①点轨道中段任意档位=球马上归位到所点档位；只有按在轨道
-  //   两端才进入牵线弹弓 ②弹弓线画在全局 canvas 上——可伸出面板外，且从球外缘起线（不在球心，
-  //   修复被球遮住的 bug）③尽头撞击/微震恢复（v19.0 原生滑条退役后旧接线全成死线）④头部音量
-  //   区收成一个小图标：点图标=静音开关，滑条只在调整时展开、2 秒不用自动收起；独立音效开关
-  //   按钮删除（功能并入图标）⑤拖悬浮球不再撒粒子 ⑥鼠标快速移动时自动关闭跟随光效保性能
-  //   v19.0（用户拍板重做）：v18.9 的白球与原生滑条打架，阈值被顶到乱档（实测卡在 500万）。
-  //   重做为「白球即阈值」：白球常驻当前档位；抓住球左右拖=精调；按住轨道空白拉出弹弓线，
-  //   松手把球弹飞（拉得越远弹得越久，撞壁 tap 音+粒子+轻震，恢复 0.72），停下在哪档阈值就是
-  //   哪档（顶部芯片实时跟随）。原生滑条 pointer-events 已禁用（只作数值存储），杜绝值乱跳。
-  //   另：鼠标彩带线条按用户要求移除（只留柔光点）；音量条 tick 改按步进触发（杜绝连发音）。
-  //   v18.9（用户逐项拍板）：①面板边缘旋转流光移除（太突兀），闪光移到 FAB 光晕与鼠标跟随
-  //   ②鼠标跟随光效：柔光点+彩色发光线条拖尾（canvas，主题色，闲置自动休眠）③头部标题
-  //   「别做算法里的困兽」撤下，原位改动效音量滑条（⋯菜单内那份移除，同一 dyhlf_vol）
-  //   ④统计四格点一下 +1（计入对应计数，滚动+浮字，连点解压）⑤阈值上限 100万→500万（11 档）
-  //   ⑥阈值滑条橡皮筋+台球弹力：拉过尽头白球拉伸（38 折超程），松手台球式来回弹（撞壁音+粒子+
-  //   面板轻震，恢复 0.72），弹完停回所在档位；两端都支持 ⑦新增 SFX.tap、数字翻牌沿用
-  //   v18.8（用户要求"屏蔽，不要让它弹出来"）：顶部搜索框的「搜索发现/热搜榜」弹层
-  //   （search-guess-container / search-hot-container）鼠标扫过就会弹、且可能滞留不关。
-  //   屏蔽三件套：①两弹层 display:none ②搜索输入框 pointer-events:none（悬停/点击都不再触发）
-  //   ③focusin 守卫：万一被聚焦（如 Tab 键）立即 blur。副作用：顶部搜索不能用鼠标点了——
-  //   如需恢复，删掉 CSS 里 v18.8 两条规则与 onDoc('focusin') 守卫即可。
-  //   v18.7（用户实测反馈）：修"顶部搜索框自动点亮、联想下拉自动弹出"——根因是 synthKeyTarget
-  //   兜底选择器 [data-e2e] 会抓到页面上第一个 data-e2e 元素 = 顶部导航条（douyin-navigation，
-  //   搜索框在其内），自动跳转的 ArrowDown 打进导航被抖音当作"搜索联想下移"。修复：兜底目标
-  //   只许是 feed 容器（feed-active-video/feed-item/slideList），并把导航/搜索区加入 activeElement
-  //   黑名单——合成按键从此物理上进不了搜索区。新增 data-e2e 白名单时严禁加宽。
-  //   v18.6（用户实测反馈）：①统计格迷你进度弧移除（看着像按钮却没反应，视觉噪音）
-  //   ②统计四格补点击解压反馈（果冻+pop音，可连点，无功能含义）③悬浮球 hover 扫光移除
-  //   ④每个视频判定时从状态卡弹出的星屑粒子与星音移除（每视频弹一次太吵）；能量线闪烁保留
-  //   v18.5（用户逐项拍板）：①状态卡回归纯解压小卡片——v18.4 的"点击=播放暂停"已按用户要求移除，
-  //   此卡严禁绑定任何影响视频的行为 ②撞尽头：面板震动+果冻挤压回弹+拇指位置向上溅粒子+闪光+音效
-  //   全保留 ③四策略芯片：每次按下果冻挤压+小粒子并发+音效（开关功能不变），1秒内连点同芯片≥3次
-  //   触发连击彩蛋 ④GPU 拉满：粒子上限 70→150、爆彩 26→60、撞尽头全屏彩带雨 ⑤流光描边（面板边缘
-  //   conic 流光，@property 角度驱动，不支持时静止）、FAB 光晕呼吸、背景微流光（运行态）⑥统计格迷你
-  //   进度弧+数字翻牌 ⑦能量线随判定闪烁、主题点波纹扩散、音量条与阈值滑条同款手感
-  //   v18.4：①轻透化（玻璃.68→.34/菜单.86→.64/blur24→18/面板FAB菜单阴影减档/状态卡与统计辉光减弱）
-  //   ②音量键（⋯菜单内音量滑条，只控脚本自身音效，持久化 dyhlf_vol）③全按钮音效（开关/芯片/菜单/
-  //   引导/FAB/主题点已有音）④共享噪声buffer（预生成0.25s复用）⑤动效粒子增强：打开级联(7层25ms步进)、
-  //   计数+1浮字、保留绿星/跳过红粒反馈、每50跳里程碑爆彩、FAB拖动拖尾、滑块拖动拖尾
-  //   ⑥新交互：状态卡点击=播放/暂停（不碰键盘）、统计格title解释、主题色粒子全部读 --ac-rgb
-  //   ⑦兜底：prefers-reduced-motion 全关动效粒子；:has 不支持时以 .running 类同步能量线
-  //   （全部为一次性动画/事件驱动，无新增常驻定时器，无需扩充 stop() 清理清单）
-  //   v18.3 = v18.2 + 两处真机事故修复 + AI 迭代红线清单。给下一个改这个文件的 AI：
-  //   先把下面的红线读完再动刀；你的任务只许是修「明确报出的 bug」。
-  //   [Z1] 修复 isLiveFast 函数头 5 行被误删：text/result/stable 未定义即用，strict 模式每次调用
-  //        必抛 ReferenceError——skipLive（保留直播关）时全部判定无声死亡、状态卡永久冻结在死前
-  //        旧文案。用户看到的"每个视频都说回看"就是它（冻结点恰是最后一次 userback 判定）。
-  //        node --check 查不出这种错。已按 v16.6 原版补回，见 isLiveFast 处标注
-  //   [Z2] 回看中下滑退出不再受 onWheel 500ms 节流：上滑的滚轮惯性事件连续刷新节流窗，吞掉紧跟
-  //        的第一次下滑（用户要滑两下才退出回看）——加 isExit 旁路，见 onWheel 处标注
-  // ═══════════ AI 迭代红线 · 动刀前必读（违者=回归事故，红队会逐条对照）═══════════
-  // 1. 悬浮球(#dy-fab)永久保留常驻（用户拍板，任何"去掉/合并进面板"方案=抗命）；三态角标已按
-  //    用户要求删除，不许加回。
-  // 2. 空格键零拦截：onKey 严禁出现 Space 分支或 preventDefault（空格=抖音原生暂停，A 案契约）。
-  // 3. 语义色 --c-ok/bad/info/pink/warn/back 写死不跟主题，只许 --ac/--ac-rgb 跟主题色。
-  //    v16.5 曾全量 HSL 派生：红主题下保留/跳过/暂停一色难辨，被红队否决，勿复辟。
-  // 4. 作者卡片检测锚定 #relatedVideoCard（宽>100 + 含「TA的作品」+ checkVisible），严禁改回
-  //    全 body textContent 扫描——「TA的作品」文本常驻 DOM，全页扫描恒真误判 + 每600ms全页
-  //    序列化（v16.5 事故）。关闭态=宽0+内容清空，双信号判关，已真机验证。
-  // 5. currentVid 必须优先锚定 a[href*="/video/"] 数字 id，取不到才退回拼接；严禁删锚定——
-  //    文案渐进加载会让拼接 vid 漂移 → hist 重复入栈、误判回看。
-  // 6. 严禁在 exitUserBack/updatePageMode 里恢复 jDone.clear()——J 是切换键，清了会重按 J 把
-  //    已清屏视频切回未清屏（autoJ 用户可感知回归）。
-  // 7. onWheel 的 isExit 旁路（回看中下滑退出不受节流）严禁删，见 [Z2]。
-  // 8. 辅助回看确认窗 600ms + commentsOpen 豁免（防双退/防评论区误触），勿调回 350ms。
-  // 9. applyThreshold 必须 activeVid=null（拖阈值后当前视频立即重判）；render 里「已停止」分支
-  //    必须在所有状态分支最前（否则停用后恒显「暂停」）。
-  // 10. stop() 清理清单必须完整：_tickTimer/_saveT/_saveTimeT/_bubT/_confirmT/_pathT/_pinTimers/
-  //     _disposers/_uiObs/#dy/#dy-fab/#dy-fx 移除/__dyhlf 置空。你新增的任何定时器/观察者/监听
-  //     必须同步登记进清理清单，漏一个=重启后僵尸链。
-  // 11. 热重启指纹：本头注释 "dyhlf vXX" 必须与 VERSION 字面同步（dyhlf_src 源码校验靠它）；
-  //     版本五处对齐 = 头注释 / VERSION / style 标记 / .ver div / manifest.json。
-  // 12. exitUserBack 尾部 try{clearTimeout(_tickTimer);tick()}catch(e){} 会吞异常——tick 链一死
-  //     全脚本假死且无任何报错。若你改了 tick 路径，必须先把该 catch 改成至少 console.warn(e)，
-  //     严禁无声吞掉。
-  // 13. 判定引擎核心（handleNewVideo/goNext/actionToken 门控/评论挂起/unknown=保留原则/门控①②③④）
-  //     经多轮红队审查验证，严禁以"重构/合并/精简"名义触碰。改 isLiveFast 只许在函数体内部
-  //     增删行：函数签名与开头 5 行（it 判空 / cacheGet / text 定义 / result,stable 声明）
-  //     一个字符都不能少——历史事故见 [Z1]。
-  // 14. 改码纪律：一处一改；行内留 "vXX 修复:" 注释；改完 node --check + 真机注入确认判定出
-  //     数值（保留/跳过计数在动）才算完，不许只跑语法检查就交货。
-  // ═══════════════════════════════════════════════════════════════════════
-  // ── 以下为 v18.2 变更（曜石引擎 UI 全换代）──
-  //   v18.2 仅动 UI 层（迁移自 V3 抖音筛选 v18.html 定稿预览）：CSS/DOM 整块替换 + 5 个 UI 动效模块
-  //   （合成音效引擎/粒子层+持续震动/解压状态卡/滑块撞击微反馈/主题即时预览），新增 #snd 音效开关；
-  //   筛选引擎/点赞读取/视频ID/自动跳转/tick/actionToken/评论/作者页/回看/J/unknown/快捷键语义零改动
-  //   v17.2 仅动 UI 层，收编六路迭代并消解冲突：AI1 布局（区块间距统一12px/状态卡副行固定占位防跳）、
-  //   AI2 视觉（状态卡与统计格统一浮起表面/FAB 顶光渐变+双层柔影/菜单与气泡阴影收敛）、
-  //   AI3 动效（面板关闭 120ms 淡出与入场对称/状态色条 0.25s 过渡/菜单项按压反馈）、
-  //   AI4 控件（控件圆角归一 --r-ctrl/按钮按压补强调色光晕/底部栏与菜单对齐 14px 内容列）、
-  //   AI5 字体（标题退后 13px·状态主文案 18px·统计 14px 的三级信息层级）、
-  //   AI6 响应式（载入即钳回视口救屏外坐标/窄窗 max-width+min-width:0 抗挤压兜底）；
-  //   筛选引擎/点赞读取/视频ID/自动跳转/tick/actionToken/评论/作者页/回看/J/unknown/快捷键语义零改动
-  //   v16.6 基线，收编 AI1/AI2/AI3 三版一致修改 + AI1 落盘防抖（AI3 终检收编）；
-  //   唯一分歧「阈值气泡定位÷zoom」按 AI3 实测回退，本版维持 v16.6 原实现
-  //   [1] isLiveFast 不稳分支补齐安全语义：scanned<5 时与"空矩形"分支同款——返回 false 且不缓存。
-  //       原版此时返回"没找到控件=直播"并被 handleNewVideo 直接采信，video 已就绪但控件/文案晚渲染的
-  //       普通视频会被当直播跳走；改后宁可按普通视频保留（unknown=保留 原则的直播版），
-  //       真直播仍靠"进入直播间"文本命中与 scanned≥5 的控件缺失判定兜底
-  //   [2] 启发式赞数读取按按钮语义排除 comment/collect/share 兄弟按钮自身计数（门控④同思路，纯排除）：
-  //       精确赞数节点缺失/延迟/改名时，不再把评论数、收藏数、分享数误当点赞数参与阈值判定
-  //   [3] 女生保留状态卡 'm ca'→'m cp'：回归「粉=女生」契约——ca 随主题强调色变，红主题下"保留"呈跳过红
-  //   [4] resize 时 FAB 钳回视口：半屏贴靠/浏览器放大后悬浮球可能整个在屏外，重载后也进不来
-  //   [5] Esc 关闭「⋯更多」菜单（含确认态还原；不 preventDefault，抖音自身 Esc 关抽屉不受影响）
-  //   [6] 滑杆 pointerup 即 blur 交还焦点：否则焦点滞留 range，W/S/↑↓ 被 onKey 的 INPUT 守卫拦截，快捷键"假死"
-  //   [7] 面板位置落盘防抖：placePanel 不再每帧同步写 localStorage，改 200ms 防抖 + stop() 刷最终位置
-  // ── 以下为 v16.6 变更（悬浮球保留·角标删除等 12 项）──
-  //   [1] 用户拍板：悬浮球保留常驻，三态角标整链删除（原角标因 render 各状态分支提前 return，从未显示过）
-  //   [2] FAB 玻璃底修复：变量块选择器 #dy → #dy,#dy-fab（悬浮球是 body 子元素，继承不到 --glass）
-  //   [3] 语义色回归写死（绿=达标 红=跳过 黄=暂停 紫=回看 蓝=直播 粉=女生），主题色只管 --ac 强调色，
-  //       恢复 v16.0「语义色不跟主题」契约；顺带修好引导条黄底红字
-  //   [4] render 把「已停止」提到最前 + 关运行开关清暂停/回看态，修复停用后恒显「暂停」
-  //   [5] 辅助回看确认窗 350→600ms，开评论不补退；退出回看的评论守卫绕 300ms 缓存直查 DOM
-  //   [6] exitUserBack/updatePageMode 不再清 jDone——J 是切换键，重按会把已清屏切回未清屏
-  //   [7] applyThreshold 补 activeVid=null，拖阈值后当前视频立即重判
-  //   [8] currentVid 优先锚定 /video/<数字id>，文案渐进加载不再改变 vid、hist 不再重复入栈
-  //   [9] 抽屉检测去周期全量 body 扫描：点击/Esc/导航后事件驱动重检，锚定 feed 侧栏 #relatedVideoCard
-  //       作者卡片（实测：「TA的作品」页签常驻 DOM，v16.5 全 body 文本检查恒真属误判源）
-  //   [10] stop() 补清 _pinTimers；[11] 引导/tooltip 补「空格=暂停/恢复」、已停止/主页补副文案
-  //   [12] 投影减轻（面板 .40→.30、FAB .5→.35）；VERSION/UI/console/manifest 五处对齐 16.6
-  // ── 以下为 v16.5 变更（红队修复版）──
-  //   1) 修复僵尸 tick 链：exitUserBack 直接调 tick() 未先 clearTimeout，用户每按一次 ↓/S
-  //      就多一条永续 tick 链且 stop() 杀不干净（越用越卡的根因）；tick 加 _stopped 守卫
-  //   2) 修复作者抽屉检测每 tick 全量序列化 body.textContent（v15.2 已删的周期全 body 扫描回潮），
-  //      加 600ms 缓存；updatePageMode 状态未变早退，不再每 tick 重复 invalidate
-  //   3) 修复 100ms 路径监听 setInterval 从不被清理，重启/清除一次漏一个
-  //   4) VERSION 与 manifest/UI 三处版本对齐（16.2→16.5）；dyhlf_src 指纹改匹配文件头
-  //      字面标记（原 'FILTER v'+VERSION 拼接串在源码中永不字面出现，校验恒失败）
-  //   5) 新增：连跳打断辅助回看——连跳中上滑/↑/W 时若页面卡顿致手势未被处理，
-  //      脚本主动补一次「上一个」，保证一次操作确定回看成功
-  //   6) 新增：下滑/S 退出回看或暂停时，若视频仍暂停则自动 play() 恢复，
-  //      避免回看归来脚本停在"暂停中"不再自动筛选、用户误以为失灵
-  //   7) 辅助回看改 350ms 延迟确认（视频已变/已退出回看则不补），根除"原生+辅助"双退
-  //   8) 评论打开时 exitUserBack 不自动 play（滚评论不再误触发播放）
-  //   9) 主题全量着色：全部语义色由主题色 HSL 派生（状态卡/计数/FAB 角标随主题换装），
-  //      新增 紫/橙/青 主题点共 6 色；女生保留状态条补主题色左缘
-  const VERSION = '19.7';
+  // 抖音低赞过滤器 v20.0
+  // 自动跳过低赞，高赞/颜值/音乐/直播可以保留（v20.0：颜值保留对象可切换 女生默认⇄男生，芯片"颜值保留"四字不变）
+  //
+  // ── 作者声明 ─────────────────────────────────────────────
+  // 作者：高级程序员，男生。
+  // 女生/男生保留的词表都是作者本人的口味，不喜欢这套筛法就别用，不伺候众口。
+  // 本脚本一天时间完成，自己刷抖音用的；发开源项目纯属兴趣分享，不接需求不维护社区版。
+  //
+  // 为什么是单文件（架构说明，回复"拆成 engine/ui/style 三文件"的建议）：
+  //   1. 单文件 = 即拷即用：控制台粘贴、油猴安装、扩展加载、热重启（dyhlf_src 兜底）
+  //      四种运行方式共用这一份源码，拆文件后注入/热重启路径全部失效；
+  //   2. MV3 content_scripts 引外部 CSS 会使"控制台一键注入"不可用，得不偿失；
+  //   3. 模块边界在文件内已经划清（模块①②③④… + 引擎/UI 分区注释），2200 行在可控范围。
+  //   综上：单文件是刻意设计，不是没能力拆。
+  // ─────────────────────────────────────────────────────────
+  // W=回看 S=继续 空格=抖音原生暂停（不拦）
+  // 赞数读不准就保留，宁可不跳也别误杀
+  const VERSION = '20.0';
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
@@ -220,9 +82,11 @@
     autoSkip: true,
     skipLive: true,
     keepFemale: true,
+    keepGender: 'f', // v20.0：颜值保留对象 'f'=女生（默认）|'m'=男生，芯片点击循环切换
     keepMusic: true,
+    fx: true, // v20.0：UI 动效总开关（波纹/震屏/爆彩/浮字等），默认开，「更多」菜单里可关
     autoJ: false,
-    threshold: 20000,
+    threshold: 1000,
     skipSpeed: 80,
     turboSpeed: 15
   };
@@ -255,6 +119,12 @@
   const TICK_IDLE = 200;
   const HIST_MAX = 200;
   const JDONE_MAX = 500;
+
+  // 启发式赞数读取的位置约束（右边操作栏那块区域的数字才算赞）
+  const HEU_MIN_L = 0.55, HEU_MAX_L = 0.98;
+  const HEU_MIN_T = 0.18, HEU_MAX_T = 0.86;
+  const HEU_MAX_W = 110;
+  const HEU_MIN_SCORE = 520;
   // v14.1：vid 级缓存 TTL，过期后允许重扫，兜底 DOM 稳定性判定失手的情况
   const VID_CACHE_TTL = 2000;
 
@@ -520,13 +390,13 @@
   function getDesc(it = activeItem()) {
     return textBySelectors(it, ['[data-e2e="video-desc"]','[data-e2e="feed-video-desc"]','[data-e2e*="desc"]']);
   }
+  // 当前视频ID，优先锚 /video/xxx 链接，拿不到再拼（昵称+描述+视频源）
   function currentVid() {
     const now = performance.now();
     if (vidCacheVal !== null && now - vidCacheAt < 25) return vidCacheVal;
     let vid;
     const it = activeItem();
     if (it) {
-      // 【AI红线5】此锚定严禁删——删了 vid 漂移 → hist 重复入栈、误判回看。
       // v16.6 [8]：优先锚定 feed 项内 /video/<数字id> 链接作 vid——昵称/文案渐进加载会变，
       // 拼接 vid 漂移会导致 hist 重复入栈、同一视频重复判定；取不到链接再退回拼接兜底
       const _a = it.querySelector('a[href*="/video/"]');
@@ -547,12 +417,9 @@
 
   // v14.1：isLiveFast 加"稳定性门控"——DOM 未稳定时不写缓存，让下次 tick 重扫
   // v14.3：新增 preText 参数，由调用方传入一次性序列化的 feed 全文，避免重复 textContent
+  // 快速判直播：文本命中"进入直播间"直接中；右下角没倍速/清屏按钮也算直播
+  // DOM 没稳的时候不写缓存，下次 tick 重扫
   function isLiveFast(it = activeItem(), vid = currentVid(), preText) {
-    // 【AI红线13】本函数签名与开头 5 行严禁再删/再改——历史上删过一次（[Z1]），
-    // skipLive 开启即全判定无声死亡、状态卡冻结。
-    // v18.2 修复：以下 5 行函数头在改「scanned<5 安全语义」时被误删（text/result/stable 未定义
-    // 直接用，strict 模式下每次调用必抛 ReferenceError，skipLive 开启时全部判定无声死亡）——
-    // 按 v16.6 原版补回
     if (!it) return false;
     const cached = cacheGet(vidLiveCache, vid);
     if (cached !== null) return cached;
@@ -613,7 +480,13 @@
     for (const sel of ['[data-e2e="video-player-digg"]','[data-e2e*="like-count"]','[data-e2e*="digg-count"]']) {
       for (const el of it.querySelectorAll(sel)) {
         if (!visible(el)) continue;
-        const v = parseCount(el.textContent);
+        // v20.0：精确节点文本可信，个位数赞（0~9）直读——原 \d{2,} 会把刚发视频判成 unknown 放行；
+        //         启发式路径维持 \d{2,} 不变（一位数误读风险高，宁可保留）
+        let v = parseCount(el.textContent);
+        if (Number.isNaN(v)) {
+          const _d = (el.textContent || '').trim().replace(_COMMA_RE, '');
+          if (/^\d$/.test(_d)) v = parseInt(_d, 10);
+        }
         if (Number.isNaN(v)) continue;
         const r = el.getBoundingClientRect();
         candidates.push({ value: v, raw: (el.textContent||'').trim().replace(/\s+/g,''), score: -r.left });
@@ -653,13 +526,13 @@
       // 精确赞数节点缺失/延迟时不再把动作栏兄弟按钮的数字误当点赞数
       if (el.closest && el.closest('[data-e2e*="comment"],[data-e2e*="collect"],[data-e2e*="share"]')) continue;
       const r = el.getBoundingClientRect();
-      if (r.left < vw*0.55 || r.left > vw*0.98) continue;
-      if (r.top < vh*0.18 || r.top > vh*0.86) continue;
-      if (r.width > 110) continue;
-      const score = r.left/vw*700 + (1-Math.abs(((r.top+r.height/2)/vh)-0.55))*300;
+      if (r.left < vw * HEU_MIN_L || r.left > vw * HEU_MAX_L) continue;
+      if (r.top < vh * HEU_MIN_T || r.top > vh * HEU_MAX_T) continue;
+      if (r.width > HEU_MAX_W) continue;
+      const score = r.left / vw * 700 + (1 - Math.abs(((r.top + r.height / 2) / vh) - 0.55)) * 300;
       if (!best || score > best.score) best = { value: c.v, raw: c.raw, score };
     }
-    if (best && best.score >= 520) {
+    if (best && best.score >= HEU_MIN_SCORE) {
       return { value: best.value, raw: best.raw, mode: 'heuristic' };
     }
     return null;
@@ -720,22 +593,27 @@
     if (stable) cacheSet(vidShopCache, vid, result);
     return result;
   }
-  // v14.1：补回 v11.2 里被删掉的词（大小姐/欧美唇/唇膜/唇冻/唇霜/唇乳/唇粉）
+  // v20.0：颜值保留对象可切换（2026-10-01 用户要求）——女生（默认）⇄ 男生，cfg.keepGender='f'|'m'。
+  //   芯片四字文案"颜值保留"不变，点击循环：女生保留→男生保留→关闭→女生保留。
+  //   函数名 matchFemale / verdict 'female-keep' / cfg.keepFemale 键名均沿用，避免牵动引擎判定与已存配置。
   const FEMALE_HOT = new Set(['美女','女生','小姐姐','女神','甜妹','辣妹','穿搭','美妆','舞蹈','自拍','颜值','JK','校园','学姐','学妹','女高','女大','女团','白丝','清纯','变装','氛围感','口红','美甲','护肤','翻唱','对口型','宿舍','教室']);
   const FEMALE_RE = /女孩|妹子|萌妹|软妹|熟女|御姐|萝莉|少女|妹妹|高中|初中|大学|校花|初恋|纯欲|仙女|女友|老婆|大小姐|闺蜜|姐妹|妆容|化妆|素颜|随拍|对镜拍|OOTD|韩系|韩妹|日系|lo裙|洛丽塔|汉服|模特|主播|好看的|漂亮|跳舞|手势舞|长发|卷发|温柔|唱歌|弹唱|理想型|宅女|恋爱|女初|女爱豆|女偶像|女歌手|辣妈|宝妈|旗袍|婚纱|女生日常|甜妹风|御姐风|纯欲风|女生头像|闺蜜照|姐妹照|女生穿搭|辣妹风|温柔风|甜美风|仙女风|初恋风|校园风|学院风|JK制服|连衣裙|短裙|吊带|露肩|大长腿|马甲线|小蛮腰|锁骨|天鹅颈|直角肩|漫画腿|蚂蚁腰|A4腰|酒窝|梨涡|虎牙|卧蚕|双眼皮|高鼻梁|嘟嘟唇|微笑唇|素颜妆|伪素颜|纯欲妆|甜辣妆|清冷妆|氛围感妆|白开水妆|裸妆|淡妆|仙子毛|漫画睫毛|野生眉|平眉|挑眉|柳叶眉|鼻影|修容|高光|腮红|欧美唇|唇釉|唇泥|镜面唇釉|哑光唇釉|丝绒唇釉|水光唇|玻璃唇|果冻唇|咬唇妆|渐变唇|花瓣唇|樱桃小嘴|丰唇|唇珠|唇膜|唇部护理|唇油|唇蜜|唇彩|唇冻|唇霜|唇乳|唇粉/;
+  const MALE_HOT = new Set(['帅哥','男生','男孩','小哥哥','猛男','大叔','兄弟','老铁','男团','男歌手','男主播','男士','老爷们','男装','男鞋','男表','男包']);
   function matchFemale(it = activeItem(), preText) {
     if (!it) return null;
     const t = preText || norm(getNickname(it) + ' ' + getDesc(it));
-    for (const w of FEMALE_HOT) {
+    const hot = (cfg.keepGender === 'm') ? MALE_HOT : FEMALE_HOT;
+    const re = (cfg.keepGender === 'm') ? MALE_RE : FEMALE_RE;
+    for (const w of hot) {
       if (t.includes(w)) return w;
     }
-    const m = t.match(FEMALE_RE);
+    const m = t.match(re);
     return m ? m[0] : null;
   }
 
-  // v14.2：女性向购物语境豁免，减少 male-skip 误杀（如"送男朋友的礼物"）
+  // v14.2：女性向购物语境豁免（女生保留模式下减少 male-skip 误杀，如"送男朋友的礼物"）
   const MALE_EXEMPT_RE = /男朋友|男友|送男|给男|适合男|男生礼物|男生的礼物|男士礼物|男同款/;
-  // v15.2：男频词表替代单字 '男' 匹配，避免"队友""前任"等无关上下文误杀；豁免规则保留
+  // v15.2：男频词表替代单字 '男' 匹配，避免"队友""前任"等无关上下文误杀；现兼作男生保留匹配源
   const MALE_RE = /男孩|男生|男人|男士|帅哥|小哥哥|猛男|大叔|兄弟|老铁|男装|男鞋|男表|男包|男团|男歌手|男主播|老爷们/;
 
   const J_INIT = Object.freeze({key:'j',code:'KeyJ',keyCode:74,which:74,bubbles:true,cancelable:true,composed:true,repeat:false});
@@ -750,7 +628,7 @@
     // v18.7：焦点在顶部导航/搜索区时绝不借用（ArrowDown 会被抖音当搜索联想下移，点亮搜索框弹下拉）
     if (ae && ae !== document.body && ae !== document.documentElement && document.contains(ae) &&
         !(ae.closest && ae.closest('[data-e2e="douyin-navigation"],header,[class*="searchbar"],[class*="search-"]'))) return ae;
-    // v18.7：兜底目标白名单——只许 feed 容器，严禁用 [data-e2e] 裸查询（第一个命中=顶部导航条）
+    // v18.7：兜底目标白名单——只许 feed 容器，不要用 [data-e2e] 裸查询（第一个命中=顶部导航条）
     const probe = document.querySelector('[data-e2e="feed-active-video"],[data-e2e="feed-item"],[data-e2e="slideList"]');
     return probe || document.body;
   }
@@ -810,6 +688,8 @@
       } catch(e){}
     });
   }
+  // 跳下一个：同时点下箭头+派发ArrowDown，双保险
+  // 连跳2次以上进turbo模式（间隔更短），最多重试40次
   async function goNext(vid, token) {
     if (!cfg.enabled || token!==actionToken || userBackMode || userPauseMode || state.authorPage) return false;
     const speed = state.consecutiveSkips >= 2 ? cfg.turboSpeed : cfg.skipSpeed;
@@ -834,6 +714,10 @@
     for (let i = 0; i < hist.length; i++) histPos.set(hist[i], i);
   }
 
+  // 核心判定：新视频来了依次过规则，决定留还是跳
+  // 顺序：直播→购物车→男生保留→音乐保留→赞数阈值
+  // v19.10a：原"男频必跳"分支已删——男生是保留对象，不能再提前跳掉；女生视频走正常赞数阈值判定
+  // 读不准一律保留，绝不误杀
   async function handleNewVideo(vid) {
     if (!cfg.enabled || state.authorPage || userBackMode || userPauseMode || commentsOpen()) return;
     state.handling = true;
@@ -865,7 +749,7 @@
         await sleep(300);
       }
       if (currentVid() !== vid || token !== actionToken) return;
-      if (!_ready) { state.unknown++; state.lastResult = { verdict:'unknown' }; markDirty(); return; } // 就绪失败：按 unknown 保留，绝不跳过
+      if (!_ready) { state.unknown++; state.unknownStreak = (state.unknownStreak || 0) + 1; state.lastResult = { verdict:'unknown' }; markDirty(); return; } // 就绪失败：按 unknown 保留，绝不跳过
       if (hidx>=0 && hidx<hist.length-1) {
         hist.length = hidx+1; // v14.2：截断后统一 rebuildHistPos 重建索引
         rebuildHistPos();
@@ -897,12 +781,12 @@
         decision = 'live';
       } else if (hasGameShoppingMarker(it, vid)) {
         decision = 'game-shopping';
-      } else if (MALE_RE.test(_fullText) && !MALE_EXEMPT_RE.test(_fullText)) {
-        decision = 'male-skip';
+      } else if (cfg.keepGender !== 'm' && MALE_RE.test(_fullText) && !MALE_EXEMPT_RE.test(_fullText)) {
+        decision = 'male-skip'; // v20.0：女生保留模式下男生仍必跳（v15.2 原语义）；男生保留模式下此分支关闭
       } else if (cfg.keepMusic && _rawText.includes('汽水音乐')) {
         decision = 'music-keep';
       } else if (cfg.keepFemale && (hit = matchFemale(it, _fullText))) {
-        decision = 'female-keep';
+        decision = 'female-keep'; // v20.0：保留对象随 cfg.keepGender 切换（女生默认/男生），verdict 名沿用
       } else {
         like = await readLikeAccurate(vid, state.consecutiveSkips>=2);
         // v15.2：等待期间用户可能打开评论，恢复后补检一次再继续
@@ -916,37 +800,40 @@
       }
 
       const shouldSkip = decision==='live'||decision==='game-shopping'||decision==='low'||decision==='male-skip';
-      if (decision==='live') state.liveSkipped++;
-      if (decision==='female-keep') state.femaleKept++;
-      if (decision==='unknown') state.unknown++;
       state.hitWord = hit;
       state.lastResult = { verdict:decision, hit, value:like?.value, raw:like?.raw };
-      markDirty();
 
       clearScreenOnce(vid);
+
+      // autoSkip 关着时只显示判定结果，不累加统计
+      if (!cfg.autoSkip) {
+        markDirty();
+        return;
+      }
+
+      if (decision==='live') state.liveSkipped++;
+      if (decision==='female-keep') state.femaleKept++;
+      // v20.0：unknown 连击计数——给"抖音改版→过滤静默失效"做显式告警用（UI 层读取，≥15 提示）
+      if (decision==='unknown') { state.unknown++; state.unknownStreak = (state.unknownStreak || 0) + 1; }
+      else state.unknownStreak = 0;
+      markDirty();
 
       if (!shouldSkip) {
         state.kept++; state.consecutiveSkips = 0;
         markDirty();
         return;
       }
-      if (cfg.autoSkip) {
-        state.skipped++; state.consecutiveSkips++;
-        addSaved(AVG_SKIP_SEC); // v15.0：时间账本
-        markDirty();
-        const ok = await goNext(vid, token);
-        if (ok) {
-          _failVid = null; _failStreak = 0;
-        } else if (_failVid === vid) {
-          // v14.3：同一 vid 连续跳转失败 3 次后不再重试，避免"检测+跳转"死循环空转
-          if (++_failStreak < 3) state.activeVid = null;
-        } else {
-          _failVid = vid; _failStreak = 1;
-          state.activeVid = null;
-        }
+      state.skipped++; state.consecutiveSkips++;
+      addSaved(AVG_SKIP_SEC);
+      markDirty();
+      const ok = await goNext(vid, token);
+      if (ok) {
+        _failVid = null; _failStreak = 0;
+      } else if (_failVid === vid) {
+        if (++_failStreak < 3) state.activeVid = null;
       } else {
-        state.kept++;
-        markDirty();
+        _failVid = vid; _failStreak = 1;
+        state.activeVid = null;
       }
     } catch (err) {
       console.warn('[FILTER] handle error:', err);
@@ -972,6 +859,8 @@
     if (!v || v.ended) return; // 看完自动连播切流不置暂停
     if (userPauseMode !== v.paused) { userPauseMode = v.paused; markDirty(); }
   }
+  // 主循环：轮询当前视频，检测到新视频就触发判定
+  // 活跃50ms/静止200ms/后台500ms，自适应降频
   function tick() {
     if (_stopped) return; // v16.5 ①：僵尸链守卫——stop() 后漏网的定时器到此自杀
     // v15.0：前台可见时长累计（隐藏时不计）；跨分钟刷新时间账本显示
@@ -1054,8 +943,6 @@
       if (!commentsOpen(true) && _v && _v.paused && !_v.ended) _v.play().catch(()=>{});
     } catch (e) {}
     markDirty();
-    // 【AI红线12】此 catch 会吞异常：tick 链死=全脚本假死且无报错。你若改过 tick 路径，
-    // 必须先把它改成 console.warn(e) 再交货。
     try { clearTimeout(_tickTimer); tick(); } catch(e){}
   }
   function onKey(e) {
@@ -1086,7 +973,6 @@
   function onWheel(e) {
     if (syntheticDepth > 0) return;
     const now = performance.now();
-    // 【AI红线7】isExit 旁路严禁删——删了用户回看后要滑两下才能退出（真机实测事故）。
     // v18.2 修复：回看中下滑退出不受 500ms 节流——上滑的滚轮惯性事件会连续刷新节流窗，
     // 把紧跟的第一次下滑吞掉（用户实测"要滑两下才判定继续往下滑"）。退出方向必须即时响应。
     const isExit = userBackMode && e.deltaY > 10;
@@ -1100,7 +986,7 @@
     if (!e.target?.closest?.('[data-e2e="video-switch-prev-arrow"]')) return;
     enterUserBack();
   }
-    onDoc('keydown', onKey, true);
+  onDoc('keydown', onKey, true);
   // v16.4：URL 变化时立即判定作者页，不等 tick
   // v16.5 ③：句柄纳入清理——原版 setInterval 从不被 stop() 清除，重启/清除程序一次漏一个
   let _lastPath = location.pathname;
@@ -1113,62 +999,33 @@
     }
   }, 100);
   onDoc('wheel', onWheel, {capture:true, passive:true});
-  onDoc('focusin', e => { // v18.8：搜索框被聚焦（Tab/程序）立即失焦，双保险防弹层
-    const t = e.target;
-    if (t && t.closest && t.closest('[data-e2e="searchbar-input"]')) { try { t.blur(); } catch (err) {} }
-  }, true);
-  // ═══ v18.9：鼠标跟随光效（柔光点+彩色发光线条拖尾，canvas GPU 绘制，闲置自动休眠）═══
-  const _mGlow = document.createElement('canvas');
-  _mGlow.id = 'dy-mglow';
-  _mGlow.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483601';
-  document.body.appendChild(_mGlow);
-  const _mg = _mGlow.getContext('2d');
-  let _mgW = 0, _mgH = 0, _mx = -100, _my = -100, _mgOn = false, _mGlowRaf = null, _mLastMove = 0;
-  let _mgPx = -1, _mgPy = -1, _mgPt = 0, _bandLine = null; // v19.1：速度检测 + 弹弓绷线（全局 canvas 绘制，可伸出面板外）
-  function _mgSize() { _mgW = _mGlow.width = innerWidth; _mgH = _mGlow.height = innerHeight; }
-  _mgSize();
-  onWin('resize', _mgSize);
-  function _mgLoop() {
-    if (_stopped) { _mGlowRaf = null; return; }
-    if (performance.now() - _mLastMove > 2500) { // 闲置 2.5s 休眠，省 GPU
-      _mg.clearRect(0, 0, _mgW, _mgH);
-      _mGlowRaf = null; _mgOn = false;
-      return;
-    }
-    _mg.clearRect(0, 0, _mgW, _mgH);
-    // v19.1：弹弓绷线——画在全局 canvas（可伸出面板外），从球外缘起线（不被球遮）
-    if (_bandLine) {
-      const bdx = _bandLine.x2 - _bandLine.x1, bdy = _bandLine.y2 - _bandLine.y1, bl = Math.hypot(bdx, bdy) || 1;
-      const sx = _bandLine.x1 + bdx / bl * 12, sy = _bandLine.y1 + bdy / bl * 12;
-      _mg.lineCap = 'round';
-      _mg.strokeStyle = `rgba(${_acRgb()},.85)`;
-      _mg.lineWidth = 2.5;
-      _mg.beginPath(); _mg.moveTo(sx, sy); _mg.lineTo(_bandLine.x2, _bandLine.y2); _mg.stroke();
-    }
-    // v19.1：快速移动时自动关闭跟随光效保性能（慢下来自动恢复）
-    const nowG = performance.now();
-    const spd = Math.hypot(_mx - _mgPx, _my - _mgPy) / Math.max(8, nowG - _mgPt) * 1000;
-    _mgPx = _mx; _mgPy = _my; _mgPt = nowG;
-    if (spd > 1500 && !_bandLine) { _mGlowRaf = requestAnimationFrame(_mgLoop); return; }
-    const gr = _mg.createRadialGradient(_mx, _my, 0, _mx, _my, 46);
-    gr.addColorStop(0, `rgba(${rgb},.26)`);
-    gr.addColorStop(1, `rgba(${rgb},0)`);
-    _mg.fillStyle = gr;
-    _mg.beginPath(); _mg.arc(_mx, _my, 46, 0, Math.PI * 2); _mg.fill();
-    _mGlowRaf = requestAnimationFrame(_mgLoop);
+  // 搜索框保留可用，下拉弹窗一律隐藏
+  // v20.0：body 级 subtree observer 触发频繁，防抖 120ms 合并处理（弹窗隐藏延迟一帧无感知），
+  //         stop()/清除时连定时器一起回收
+  // 为什么不缩小观察范围（回复审查建议"只 observe 搜索栏容器"）：抖音 SPA 的联想/热搜/
+  //         下拉容器挂在动态父节点下、父节点本身也随路由重建，锚定任何固定容器都会漏；
+  //         回调已防抖 120ms，且选择器仅匹配 id/class 前缀，实际开销可控。维持现状。
+  let _searchPopupT = null;
+  const _hideSearchPopups = () => {
+    document.querySelectorAll('[data-e2e*="search-"],[class*="search-suggest"],[class*="SearchSuggest"],[class*="search-dropdown"]').forEach(el => {
+      if (!el.querySelector('[data-e2e="searchbar-input"]')) el.style.display = 'none';
+    });
+  };
+  const _searchPopupObs = new MutationObserver(() => {
+    if (_searchPopupT) return;
+    _searchPopupT = setTimeout(() => { _searchPopupT = null; _hideSearchPopups(); }, 120);
+  });
+  if (document.body) {
+    _searchPopupObs.observe(document.body, { childList: true, subtree: true });
+    _disposers.push(() => { _searchPopupObs.disconnect(); if (_searchPopupT) { clearTimeout(_searchPopupT); _searchPopupT = null; } });
   }
-  onWin('mousemove', e => {
-    _mx = e.clientX; _my = e.clientY; _mLastMove = performance.now();
-    if (!_mgOn && !_prm) { _mgOn = true; _mgSize(); if (!_mGlowRaf) _mGlowRaf = requestAnimationFrame(_mgLoop); }
-  }, { passive: true });
-  _disposers.push(() => { if (_mGlowRaf) cancelAnimationFrame(_mGlowRaf); try { _mGlow.remove(); } catch (e) {} });
   onDoc('click', onClick, true);
   _scheduleDrawerScan(); // v16.6 [9]：启动先检一次抽屉（兜底刷新时抽屉已开）
   // v16.1 ①：删除 pause/play 事件监听，改由 tick 轮询真实 video.paused（见 pollPauseState），根除事件竞态
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v19.7 · 曜石引擎（本行是热重启版本指纹，改动需与 VERSION 同步）
+  style.textContent = `/*dyhlf v20.0 · 曜石引擎（本行是热重启版本指纹，格式必须为"dyhlf v"+VERSION 空格形式、与 VERSION 同步改动）
   UI 全换代：深空底色 / 顶部能量线(运行态点亮) / 状态卡能量核心(tint渐变+左能量条+脉冲点)
   / 滑块十档刻度+彩底值芯片 / 策略芯片发光态 / 统计格顶色条 / FAB 主题光环 / blur 入场动效
   契约不变：#dy/#dy-fab 变量块、--ac/--ac-rgb 主题注入、全部元素 ID 与语义类、自清理标记 */
@@ -1176,7 +1033,7 @@
   --w-p:240px;
   --ac:#FF3B5C;--ac-rgb:255,59,92;
   --t1:rgba(255,255,255,.96);--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.40);
-  /*AI红线3：语义色写死勿跟主题*/--c-ok:#3DE8A0;--c-bad:#FF5C7A;--c-info:#5AB0FF;--c-pink:#FF6FA8;--c-warn:#FFC53D;--c-back:#B389FF;
+  --c-ok:#3DE8A0;--c-bad:#FF5C7A;--c-info:#5AB0FF;--c-pink:#FF6FA8;--c-warn:#FFC53D;--c-back:#B389FF;
   --glass:rgba(14,16,22,.34);--glass-2:rgba(255,255,255,.055);--menu:rgba(16,18,24,.64);
   --line:rgba(255,255,255,.12);--line-2:rgba(255,255,255,.08);
   --r-card:14px;--r-ctrl:11px;
@@ -1252,7 +1109,7 @@
 #dy .slwrap{position:relative;height:32px;display:flex;align-items:center;cursor:pointer}
 #dy .slwrap::before{content:'';position:absolute;inset:-5px 0;pointer-events:none}/* 命中区扩至 42px 高 */
 #dy .slwrap::after{content:'';position:absolute;left:9px;right:9px;bottom:calc(50% + 5px);height:2.5px;pointer-events:none;
-  background:repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1.5px,transparent 1.5px calc((100% - 1.5px)/10))}
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1.5px,transparent 1.5px calc(100%/10))}
 #dy .sl{-webkit-appearance:none;appearance:none;display:block;width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.13);outline:none;margin:0;cursor:pointer} /* v19.2：原生滑条恢复 */
 #dy .sl::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.3),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer;transition:transform .12s,box-shadow .12s} /* v19.2：拇指恢复 */
 #dy .sl:hover::-webkit-slider-thumb{transform:scale(1.15)}
@@ -1391,9 +1248,11 @@
 #dy .volrow svg .mu{display:none}
 #dy .volrow.muted svg .wv{display:none}
 #dy .volrow.muted svg .mu{display:block}
-/* —— v18.8 屏蔽顶部搜索联想弹层（用户要求；恢复方法见文件头 v18.8 说明）—— */
-[data-e2e="search-guess-container"],[data-e2e="search-hot-container"]{display:none!important}
-[data-e2e="searchbar-input"]{pointer-events:none!important}
+/* —— 搜索框下方所有弹窗/联想/热搜全部隐藏，搜索框本身保留可用 —— */
+[data-e2e="search-guess-container"],[data-e2e="search-hot-container"],
+[data-e2e*="search-suggest"],[data-e2e*="search-dropdown"],[data-e2e*="search-popup"],
+[class*="search-suggest"],[class*="search-hot"],[class*="search-dropdown"],[class*="search-popup"],
+[class*="SearchSuggest"],[class*="SearchDropdown"],[class*="SearchPopup"]{display:none!important}
 /* —— v18.4 系统减弱动效：动画/过渡全关（粒子/浮字由 JS _prm 双保险）—— */
 @media (prefers-reduced-motion:reduce){
   #dy,#dy *,#dy::before,#dy::after,#dy *::before,#dy *::after,#dy-fab,#dy-fab::before{animation:none!important;transition:none!important}
@@ -1444,16 +1303,20 @@
     <div style="--dc:var(--c-ok)"><div class="v cg" id="nk">0</div><div class="l">保留</div></div>
     <div style="--dc:var(--c-bad)"><div class="v cr" id="ns">0</div><div class="l">跳过</div></div>
     <div style="--dc:var(--c-info)"><div class="v cb" id="nl">0</div><div class="l">直播</div></div>
-    <div style="--dc:var(--c-pink)"><div class="v cp" id="nf">0</div><div class="l">女生</div></div>
+    <div style="--dc:var(--c-pink)"><div class="v cp" id="nf">0</div><div class="l">男生</div></div>
   </div>
   <div class="time"><span id="tNow"></span><span id="tSave"></span></div>
   <div class="ft">
     <div class="more" id="dy-more">
       <button class="mbtn" id="dy-more-btn" title="更多" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu" id="dy-menu" hidden>
-        <div class="mi" id="dy-restart">重启脚本</div>
+                <div class="mi" id="dy-restart">重启脚本</div>
+        <div class="mi" style="padding:8px 12px;cursor:default">
+          <div style="font-size:11px;color:var(--t3);margin-bottom:4px">背景透明度</div>
+          <input type="range" id="dy-opacity" min="0" max="95" value="34" style="width:100%;height:4px">
+        </div>
+        <div class="mi" id="dy-fxmi" title="波纹/震屏/爆彩等装饰性动效总开关">动效：开</div>
         <div class="mi danger" id="dy-cls" title="将删除全部配置与时间账本，不可恢复">清除程序</div>
-        <!-- v18.9：菜单内音量滑条已上移到头部，此处移除 -->
       </div>
     </div>
     <div class="tm" id="tm">
@@ -1464,7 +1327,7 @@
       <i data-c="255,149,0" data-hex="#FF9500" style="background:#FF9500"></i>
       <i data-c="34,222,226" data-hex="#22DEE2" style="background:#22DEE2"></i>
     </div>
-    <div class="ver" title="点击重启脚本">v19.7</div>
+    <div class="ver" title="点击重启脚本">v20.0</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
@@ -1604,7 +1467,7 @@
   //         静音态持久化 localStorage(dyhlf_snd)，初始化时恢复并同步 .off 类与 aria-pressed
   let _AC = null, _muted = false, _noiseBuf = null;
   const _prm = (typeof matchMedia === 'function') && matchMedia('(prefers-reduced-motion: reduce)').matches; // v18.4：系统减弱动效 → 粒子/浮字全关
-  let _vol = .7; // v18.4：音效总音量（0~1），持久化 dyhlf_vol
+  let _vol = 1.5; // 默认音量 150%
   try { const _sv = parseFloat(localStorage.getItem('dyhlf_vol')); if (isFinite(_sv) && _sv >= 0 && _sv <= 200) _vol = _sv / 100; } catch (e) {} // v19.4：上限 200%
   try { _muted = localStorage.getItem('dyhlf_snd') === '0'; } catch (e) {}
   function _ac() {
@@ -1638,33 +1501,19 @@
     n.connect(bp).connect(gn).connect(c.destination); n.start(t0, 0, Math.min(t, .25));
   }
   const SFX = {
-    tick: v => _tone({ f: 560 + v * 70, t: .05, type: 'triangle', g: .07 }),                    // 过档：音高随档位上行
-    hit: () => { _tone({ f: 170, f2: 55, t: .16, g: .22 }); _noiseHit({ t: .09, g: .1, f: 2400, q: .8 }); _tone({ f: 1240, t: .22, type: 'triangle', g: .05, delay: .02 }); }, // 撞击：闷响+沙粒+高频闪音
-    pop: () => { const k = .9 + Math.random() * .25; _tone({ f: 520 * k, f2: 150 * k, t: .09, g: .16 }); _noiseHit({ t: .03, g: .05, f: 3000, q: 2 }); }, // 解压卡：随机音高气泡 pop
-    note: (f, oct) => _tone({ f: f * (oct ? 2 : 1), t: .16, g: .05 }),                          // 主题：五声音阶
-    // —— v18.4：全按钮音效预设 ——
-    click: () => _tone({ f: 880, f2: 640, t: .06, type: 'triangle', g: .08 }),                  // 通用点击
-    sw: () => { _tone({ f: 660, f2: 990, t: .09, type: 'triangle', g: .09 }); _noiseHit({ t: .04, g: .04, f: 2600, q: 2 }); }, // 开关拨动
-    menu: () => _tone({ f: 420, f2: 620, t: .08, type: 'sine', g: .06 }),                       // 菜单展开
-    warn: () => _tone({ f: 330, f2: 220, t: .14, type: 'square', g: .05 }),                     // 危险项
-    star: () => _tone({ f: 1318, t: .1, type: 'sine', g: .05 }),                                // 保留绿星
-    coin: () => { _tone({ f: 988, t: .07, type: 'triangle', g: .07 }); _tone({ f: 1319, t: .12, type: 'triangle', g: .07, delay: .06 }); }, // 里程碑
-    tap: () => { _tone({ f: 190, f2: 90, t: .07, g: .1 }); _noiseHit({ t: .03, g: .05, f: 2000, q: 1 }); }, // v18.9：台球撞壁
+    tick: v => _tone({ f: [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093][v] || 523.25, t: .06, type: 'sine', g: .15 }),
+    hit: () => { _tone({ f: 170, f2: 55, t: .2, g: .4 }); _noiseHit({ t: .12, g: .2, f: 2400, q: .8 }); _tone({ f: 1240, t: .25, type: 'triangle', g: .1, delay: .02 }); },
+    pop: () => { const k = .9 + Math.random() * .25; _tone({ f: 520 * k, f2: 150 * k, t: .1, g: .25 }); _noiseHit({ t: .04, g: .08, f: 3000, q: 2 }); },
+    note: (f, oct) => _tone({ f: f * (oct ? 2 : 1), t: .2, g: .12 }),
+    click: () => _tone({ f: 880, f2: 640, t: .07, type: 'triangle', g: .15 }),
+    sw: () => { _tone({ f: 660, f2: 990, t: .1, type: 'triangle', g: .15 }); _noiseHit({ t: .05, g: .06, f: 2600, q: 2 }); },
+    menu: () => _tone({ f: 420, f2: 620, t: .1, type: 'sine', g: .12 }),
+    warn: () => _tone({ f: 330, f2: 220, t: .16, type: 'square', g: .1 }),
+    star: () => _tone({ f: 1318, t: .12, type: 'sine', g: .1 }),
+    coin: () => { _tone({ f: 988, t: .08, type: 'triangle', g: .12 }); _tone({ f: 1319, t: .15, type: 'triangle', g: .12, delay: .06 }); },
+    tap: () => { _tone({ f: 190, f2: 90, t: .08, g: .15 }); _noiseHit({ t: .04, g: .08, f: 2000, q: 1 }); },
   };
-  const _sndBtn = document.getElementById('snd');
-  if (_sndBtn) {
-    const _syncSndBtn = () => {
-      _sndBtn.classList.toggle('off', _muted);
-      _sndBtn.setAttribute('aria-pressed', String(!_muted));
-    };
-    _syncSndBtn(); // 初始化：恢复持久化的静音态
-    _sndBtn.addEventListener('click', () => {
-      _muted = !_muted;
-      _syncSndBtn();
-      try { localStorage.setItem('dyhlf_snd', _muted ? '0' : '1'); } catch (e) {}
-      if (!_muted) SFX.tick(6);
-    });
-  }
+  // v19.1：静音开关=音量小图标 #dy-volicon（旧 #snd 按钮已删，残留绑定已清）；静音态 1448 行初始化恢复
   // v18.4 模块①b：音量滑条 —— 调 SFX 总增益，持久化 dyhlf_vol
   const _volSl = document.getElementById('dy-vol');
   if (_volSl) {
@@ -1673,9 +1522,7 @@
       _vol = (+_volSl.value) / 100;
       try { localStorage.setItem('dyhlf_vol', String(_volSl.value)); } catch (e) {}
       const _vstep = Math.round(_vol * 20);
-      if (_vstep !== (_volSl._lastStep || -1)) { _volSl._lastStep = _vstep; _reFx(_volSl, 'tk'); SFX.tick(_vstep); } // v19.0：按步进触发，杜绝连发音
-      const vr = _volSl.getBoundingClientRect();
-      _spawnParts(1, vr.left + (vr.width - 13) * (+_volSl.value / 100) + 6, vr.top + vr.height / 2, 6, _acRgb()); // v18.5 拖动拖尾
+      if (_vstep !== (_volSl._lastStep || -1)) { _volSl._lastStep = _vstep; SFX.tick(_vstep); } // v19.0：按步进触发，杜绝连发音
     });
     _volSl.addEventListener('animationend', () => _volSl.classList.remove('tk'));
   }
@@ -1708,43 +1555,10 @@
   const _fxHost = document.createElement('div');
   _fxHost.id = 'dy-fx';
   document.body.appendChild(_fxHost);
-  function _spawnParts(n, x, y, spread, rgb) {
-    if (_prm || _fxHost.childElementCount > 150) return; // v18.5：用户授权吃显卡，上限翻倍
-    for (let i = 0; i < n; i++) {
-      const p = document.createElement('i'), sz = 2 + Math.random() * 3.5;
-      const c = Math.random() < .28 ? '255,255,255' : (rgb || _acRgb()); // v18.4：兜底色跟主题，不再写死红
-      p.style.cssText = `left:${x + Math.random() * spread - spread / 2}px;top:${y}px;width:${sz}px;height:${sz}px;background:rgb(${c});box-shadow:0 0 ${sz * 2}px rgba(${c},.8)`;
-      const dx = (Math.random() - .5) * 26, dy = 36 + Math.random() * 66, dur = .65 + Math.random() * .5;
-      p.animate([
-        { transform: 'translate(0,0) scale(1)', opacity: .95 },
-        { transform: `translate(${dx * .4}px,${dy * .35}px) scale(1)`, opacity: .85, offset: .35 },
-        { transform: `translate(${dx}px,${dy}px) scale(.4)`, opacity: 0 }
-      ], { duration: dur * 1000, easing: 'cubic-bezier(.3,.4,.6,1)' }).onfinish = () => p.remove();
-      _fxHost.appendChild(p);
-    }
-  }
-  // —— v18.4 新粒子：上升星屑 / 里程碑爆彩（颜色读参，全部一次性 WAAPI，onfinish 自删）——
-  function _spawnRise(n, x, y, rgb) {
-    if (_prm || _fxHost.childElementCount > 150) return; // v18.5：上限同步翻倍
-    for (let i = 0; i < n; i++) {
-      const p = document.createElement('i'), sz = 2.5 + Math.random() * 3;
-      p.style.cssText = `left:${x + (Math.random() - .5) * 30}px;top:${y}px;width:${sz}px;height:${sz}px;background:rgb(${rgb});box-shadow:0 0 ${sz * 2}px rgba(${rgb},.8)`;
-      const dx = (Math.random() - .5) * 34, dy = -(30 + Math.random() * 55), dur = .6 + Math.random() * .45;
-      p.animate([
-        { transform: 'translate(0,0) scale(.6)', opacity: 0 },
-        { transform: `translate(${dx * .3}px,${dy * .4}px) scale(1)`, opacity: .95, offset: .3 },
-        { transform: `translate(${dx}px,${dy}px) scale(.35)`, opacity: 0 }
-      ], { duration: dur * 1000, easing: 'cubic-bezier(.25,.5,.5,1)' }).onfinish = () => p.remove();
-      _fxHost.appendChild(p);
-    }
-  }
-  function _fxStars(el, red) {
-    if (!el || _prm) return;
-    const r = el.getBoundingClientRect();
-    _spawnRise(red ? 4 : 6, r.left + r.width * (.3 + Math.random() * .4), r.top + 6, red ? '255,92,122' : '61,232,160');
-  }
+  // v20.0：UI 动效总开关——装饰性动效（波纹/震屏/爆彩/浮字/果冻按压/海浪）入口统一走 fxOn()
+  const fxOn = () => cfg.fx !== false;
   function _confetti() {
-    if (_prm) return;
+    if (_prm || !fxOn()) return;
     try { SFX.coin(); } catch (e) {}
     const r = panel.getBoundingClientRect();
     const cols = ['61,232,160', '255,197,61', '90,176,255', '255,111,168', '255,255,255'];
@@ -1762,7 +1576,7 @@
     }
   }
   function _floatUp(el, txt) {
-    if (_prm) return;
+    if (_prm || !fxOn()) return;
     try {
       const cell = el.parentElement; if (!cell) return;
       const f = document.createElement('b');
@@ -1809,6 +1623,7 @@
   let _jellyAni = null;
   if (_stCard) {
     _stCard.addEventListener('pointerdown', e => {
+      if (!fxOn()) return;
       _jellyAni && _jellyAni.cancel();
       _jellyAni = _stCard.animate([
         { transform: 'scale(1,1)', easing: 'ease-out' },
@@ -1818,16 +1633,19 @@
         { transform: 'scale(1.01,.995)', offset: .84 },
         { transform: 'scale(1,1)' }
       ], { duration: 460 });
+      // v20.0：涟漪坐标必须除以面板 zoom——getBoundingClientRect 是视觉像素，
+      // 而 .rp 在 zoom 容器内按布局像素定位，不除会往右下漂（缩放越大漂得越多）
+      const z = parseFloat(panel.style.zoom) || 1;
       const r = _stCard.getBoundingClientRect(), sz = 90;
       const rp = document.createElement('span'); rp.className = 'rp';
-      rp.style.left = ((e.clientX || r.left + r.width / 2) - r.left) + 'px';
-      rp.style.top = ((e.clientY || r.top + r.height / 2) - r.top) + 'px';
+      rp.style.left = (((e.clientX || r.left + r.width / 2) - r.left) / z) + 'px';
+      rp.style.top = (((e.clientY || r.top + r.height / 2) - r.top) / z) + 'px';
       rp.style.width = rp.style.height = sz + 'px';
       _stCard.appendChild(rp); setTimeout(() => rp.remove(), 580);
       SFX.pop();
     });
     // 【用户裁定·程序说明】v18.5：状态卡是纯解压小卡片——只许果冻挤压/涟漪/音效，
-    // 严禁绑定播放暂停、跳转或任何影响视频的行为（v18.4 曾绑过"点击=播放暂停"，实测点卡片
+    // 不要绑定播放暂停、跳转或任何影响视频的行为（v18.4 曾绑过"点击=播放暂停"，实测点卡片
     // 会把视频停了，已按用户要求移除）。往后迭代也不许在此卡上挂任何视频控制逻辑。
   }
   // 模块④：滑块撞击与微反馈接线 —— 追加监听，原 input 处理（applyThreshold/paintSlider/showBub）不动。
@@ -1835,35 +1653,26 @@
   //          到端点：impactFx 震屏（WAAPI 逐段缓动必须写在每个 keyframe 的 easing 属性——
   //          options.easing 作用于整条时间线，会把震动压缩成瞬间）+ 能量线爆闪 + 粒子迸溅 + hit 音；
   //          按住尽头不松手：560ms 后接管 96ms 无限微震 + 110ms 粒子雨，松手/离端点全停
-  const _reFx = (el, c) => { el.classList.remove(c); void el.offsetWidth; el.classList.add(c); };
   const _acRgb = () => ((getComputedStyle(panel).getPropertyValue('--ac-rgb') || '').trim() || '255,59,92');
   let _lastSl = +$.sl.value;
   let _slDragging = false;
   let _rumbleAni = null, _partTimer = null, _rumblePend = null;
-  function _impactFx(dir) {
-    const s = dir === 'r' ? -1 : 1; // 撞右端 → 面板向左回弹（反作用力方向）
-    const rgb = _acRgb();
-    const base = getComputedStyle(panel).boxShadow;
+  function _impactFx() {
+    if (!fxOn()) return;
+    // 拉满重震：面板左右猛晃一下
     panel.animate([
-      { transform: 'translateX(0) scale(1)', boxShadow: base, easing: 'cubic-bezier(.3,.9,.4,1)' },
-      { transform: `translateX(${s * 13}px) scale(1.06,.86)`, boxShadow: base + `,0 0 48px rgba(${rgb},.55)`, offset: .13, easing: 'ease-in-out' },
-      { transform: `translateX(${s * -9}px) scale(.95,1.07)`, boxShadow: base + `,0 0 32px rgba(${rgb},.32)`, offset: .34, easing: 'ease-in-out' },
-      { transform: `translateX(${s * 5.5}px) scale(1.02,.97)`, offset: .55, easing: 'ease-in-out' },
-      { transform: `translateX(${s * -2.5}px) scale(.99,1.015)`, offset: .75, easing: 'ease-in-out' },
-      { transform: 'translateX(0) scale(1)' }
-    ], { duration: 500 }); // v18.5：震动+果冻挤压回弹一体（用户选"全部都要"）
-    // 能量线随撞击爆闪（仅运行态可见，::after 伪元素动画；旧引擎不支持 pseudoElement 时静默降级）
-    try {
-      panel.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(2.4)', offset: .2 }, { filter: 'brightness(1)' }], { duration: 460, easing: 'ease-out', pseudoElement: '::after' });
-    } catch (e) {}
-    // v19.3：撞击粒子已按用户要求移除（面板缩放后坐标换算不准、位置对不上）；彩带雨保留
-    _ribbonRain();
+      { transform: 'translateX(0)' },
+      { transform: 'translateX(-13px)', offset: .13 },
+      { transform: 'translateX(9px)', offset: .34 },
+      { transform: 'translateX(-5px)', offset: .55 },
+      { transform: 'translateX(0)' }
+    ], { duration: 400 });
   }
-  // —— v19.6：拉满海浪——光带一波接一波从左往右推过阈值区，按住不松浪不停 ——
+  // —— v19.6：拉满海浪——光带一波接一波从左往右推过阈值区，停在最右档就一直保持 ——
   let _waveRaf = null, _waveLast = 0;
   function _waveTick(now) {
     if (_stopped) { _waveRaf = null; return; }
-    if (!_slDragging || +$.sl.value !== THRESHOLD_PRESETS.length - 1) { _waveRaf = null; return; } // 松手/离端即停
+    if (+$.sl.value !== THRESHOLD_PRESETS.length - 1) { _waveRaf = null; return; } // 离开最右档即停
     if (now - _waveLast > 280) {
       _waveLast = now;
       const s = document.createElement('span');
@@ -1879,19 +1688,24 @@
     _waveRaf = requestAnimationFrame(_waveTick);
   }
   function _lightSweep() {
-    if (_prm) return;
+    if (!fxOn()) return;
     if (!_waveRaf) { _waveLast = 0; _waveRaf = requestAnimationFrame(_waveTick); }
   }
   // —— v19.4：全按钮点击波纹（从点击处荡开一圈色环；本地坐标按面板 zoom 换算）——
   function _btnRing(el, e) {
-    if (_prm || !el) return;
+    if (_prm || !fxOn() || !el) return;
     try {
-      const r = el.getBoundingClientRect();
-      const z = panel.contains(el) ? (parseFloat(panel.style.zoom) || 1) : 1;
+      // v19.10a：SVG 目标（音量图标）不能直接塞 HTML 波纹，改挂父容器；static 定位的宿主
+      // 会被波纹锚到面板原点导致位置对不上鼠标，就地补 position:relative
+      const isSvg = typeof SVGElement !== 'undefined' && el instanceof SVGElement;
+      const host = isSvg ? (el.parentElement || el) : el;
+      if (host && getComputedStyle(host).position === 'static') host.style.position = 'relative';
+      const r = host.getBoundingClientRect();
+      const z = panel.contains(host) ? (parseFloat(panel.style.zoom) || 1) : 1;
       const cx = (e && e.clientX ? e.clientX : r.left + r.width / 2), cy = (e && e.clientY ? e.clientY : r.top + r.height / 2);
       const rp = document.createElement('span');
       rp.style.cssText = `position:absolute;left:${(cx - r.left) / z}px;top:${(cy - r.top) / z}px;width:${14 / z}px;height:${14 / z}px;border-radius:50%;border:2px solid rgba(${_acRgb()},.7);transform:translate(-50%,-50%) scale(.4);pointer-events:none`;
-      el.appendChild(rp);
+      host.appendChild(rp);
       rp.animate([
         { transform: 'translate(-50%,-50%) scale(.4)', opacity: .9 },
         { transform: 'translate(-50%,-50%) scale(9)', opacity: 0 }
@@ -1900,89 +1714,33 @@
   }
   onDoc('click', e => {
     if (_prm || syntheticDepth > 0) return;
-    const el = e.target && e.target.closest && e.target.closest('.sw,.mbtn,.menu .mi,.gok,.nm>div,#dy-fab,#dy-volicon'); // v19.7：状态卡与四策略芯片不叠波纹（自带果冻/粒子/音效）
+    const el = e.target && e.target.closest && e.target.closest('.sw,.mbtn,.menu .mi,.gok,.nm>div,#dy-fab,#dy-volicon'); // v19.10：状态卡与四策略芯片不叠波纹（自带果冻/粒子/音效）
     if (el) _btnRing(el, e);
   }, true);
-  function _startRumble() {
-    if (_rumbleAni) return;
-    _rumbleAni = panel.animate([
-      { transform: 'translateX(0)' },
-      { transform: 'translateX(2.6px) rotate(.12deg)' },
-      { transform: 'translateX(-2.6px) rotate(-.12deg)' },
-      { transform: 'translateX(0)' }
-    ], { duration: 96, iterations: Infinity });
-    _partTimer = setInterval(() => {
-      const r = panel.getBoundingClientRect();
-      _spawnParts(2, r.left + 6, r.bottom - 3, r.width - 12, _acRgb());
-    }, 110);
-  }
   function _stopRumble() {
     if (_rumbleAni) { try { _rumbleAni.cancel(); } catch (e) {} _rumbleAni = null; }
     if (_partTimer) { clearInterval(_partTimer); _partTimer = null; }
     clearTimeout(_rumblePend); _rumblePend = null;
   }
-  function _scheduleRumble() {
-    clearTimeout(_rumblePend);
-    _rumblePend = setTimeout(() => { if (_slDragging && +$.sl.value === 0) _startRumble(); }, 560); // v19.4：微震只在最小端
-  }
-  $.sl.addEventListener('pointerdown', () => { _slDragging = true; if (+$.sl.value === 0) _scheduleRumble(); }); // v19.4：微震只在最小端
+  $.sl.addEventListener('pointerdown', () => { _slDragging = true; });
   ['pointerup', 'pointercancel'].forEach(ev => $.sl.addEventListener(ev, () => { _slDragging = false; _stopRumble(); }));
+  let _slTickAt = 0;
   $.sl.addEventListener('input', () => {
     const _maxI = THRESHOLD_PRESETS.length - 1;
-    let _lastTickAt = 0; // v19.2：过档音节流
-    const v = +$.sl.value, atEdge = (v === 0 || v === _maxI), wasEdge = (_lastSl === 0 || _lastSl === _maxI);
-    if (v !== _lastSl) { _reFx($.sl, 'tk'); _reFx(_slwrap, 'tk'); _reFx($.slv, 'pop');
+    const v = +$.sl.value, wasMax = (_lastSl === _maxI);
+    // 过档音效（130ms 节流）
+    if (v !== _lastSl) {
       const _tn = performance.now();
-      if (_tn - _lastTickAt > 130) { _lastTickAt = _tn; SFX.tick(v); } // v19.2：130ms 节流，连拖不再突突突
-      if (_slDragging) { const _sr = $.sl.getBoundingClientRect(); _spawnParts(2, _sr.left + 9 + (v / _maxI) * (_sr.width - 18), _sr.top + _sr.height / 2, 10, _acRgb()); } } // v18.4 拖动拖尾（v19.2：分母随档位数）
-    if (atEdge && !wasEdge) {
-      if (v === _maxI) { _lightSweep(); _impactFx('r'); SFX.hit(); } // v19.5：拉满→流光+单次撞击震（不持续）
-      else { _impactFx('l'); _reFx($.sl, 'imp'); SFX.hit(); } // 拉到最小→左端撞击
+      if (_tn - _slTickAt > 60) { _slTickAt = _tn; SFX.tick(v); }
     }
-    if (atEdge && _slDragging) _scheduleRumble(); // 撞到尽头且没松手 → 先撞后嗡
-    if (!atEdge) _stopRumble();
+    // 拉到最右档：重音效 + 震屏 + 海浪持续
+    if (v === _maxI && !wasMax) { SFX.hit(); _impactFx(); _lightSweep(); }
     _lastSl = v;
   });
   $.sl.addEventListener('animationend', () => { $.sl.classList.remove('tk', 'imp'); });
   _slwrap.addEventListener('animationend', () => { _slwrap.classList.remove('tk'); });
   $.slv.addEventListener('animationend', () => { $.slv.classList.remove('pop'); });
-  // v19.2：白球/弹弓/台球整链已按用户要求移除，阈值滑条回归原生拖动（尽头撞击+微震接线恢复生效）
-  function _launchBall(vx) {
-    if (_ballRaf) cancelAnimationFrame(_ballRaf);
-    const r0 = _trackRect();
-    const wr = _slwrap.getBoundingClientRect();
-    const minC = 9, maxC = wr.width - 9;
-    let x = parseFloat(_ball.style.left) || (minC + maxC) / 2;
-    let last = performance.now();
-    const step = now => {
-      if (_stopped) { try { _ball.remove(); _band.remove(); } catch (err) {} _ballRaf = null; return; }
-      const dt = Math.min(.05, (now - last) / 1000); last = now;
-      x += vx * dt;
-      let hitWall = 0;
-      if (x < minC) { x = minC; vx = -vx * .72; hitWall = 1; }
-      else if (x > maxC) { x = maxC; vx = -vx * .72; hitWall = -1; }
-      vx *= (1 - .9 * dt);
-      _ball.style.left = x + 'px';
-      if (hitWall) {
-        const wx = hitWall < 0 ? wr.left + 9 : wr.right - 9;
-        SFX.tap(); _spawnParts(4, wx, wr.top + wr.height / 2, 12, _acRgb());
-        panel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${hitWall * 2.5}px)` }, { transform: 'translateX(0)' }], { duration: 130, easing: 'ease-out' });
-      }
-      const pi = Math.max(0, Math.min(_maxI(), Math.round((x - 9) / (maxC - 9) * _maxI())));
-      $.slv.textContent = '≥' + fmtThreshold(THRESHOLD_PRESETS[pi]); // 飞行中芯片实时预览
-      if (Math.abs(vx) < 60) {
-        _ball.animate([{ left: x + 'px' }, { left: _notchLX(pi) + 'px' }], { duration: 160, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => {
-          _setNotch(pi); // 球停在哪档，阈值就是哪档
-          showBub();
-        };
-        _ballRaf = null;
-        return;
-      }
-      _ballRaf = requestAnimationFrame(step);
-    };
-    _ballRaf = requestAnimationFrame(step);
-    _disposers.push(() => { if (_ballRaf) cancelAnimationFrame(_ballRaf); try { _ball.remove(); _band.remove(); } catch (err) {} });
-  }
+  // v19.2：白球/弹弓/台球整链已移除，阈值滑条回归原生拖动
   // ══════════ v18.2 UI 动效模块结束 ══════════
 
   function saveFabPos() {
@@ -2114,7 +1872,6 @@
     }else{
       clearTimeout(_closeT); panel.classList.remove('closing');
       panel.style.display='block';
-      _reFx(panel, 'casc'); // v18.4：每次打开重播级联
       placePanel();
       _panelOpen=true;
       setTimeout(_measurePanel, 50);
@@ -2160,6 +1917,7 @@
     $.rfem.setAttribute('aria-pressed', String(!!cfg.keepFemale));
     $.rmus.setAttribute('aria-pressed', String(!!cfg.keepMusic));
     $.rj.setAttribute('aria-pressed', String(!!cfg.autoJ));
+    if (typeof syncKeepUi === 'function') syncKeepUi(); // v20.0：保留对象女生/男生切换后同步计数格与提示
     panel.classList.toggle('running', cfg.enabled); // v18.4：运行态类（:has 不支持时的兜底，能量线/呼吸点/脉冲用）
     fab.classList.toggle('running', cfg.enabled); // v18.5：FAB 光晕呼吸（运行态）
   }
@@ -2173,7 +1931,6 @@
   function countUp(el, to){
     const from = parseInt(el.textContent, 10) || 0;
     if (to > from && !_prm) _floatUp(el, '+' + (to - from)); // v18.4：+1 浮字（v18.9 扩到四格）
-    if (to > from) _reFx(el, 'flip'); // v18.5：数字翻牌
     if (from === to || document.hidden || typeof requestAnimationFrame !== 'function' || !el.isConnected) {
       el.textContent = to;
       return;
@@ -2221,7 +1978,7 @@
     if (r.verdict && r.verdict !== _lastFxV) {
       _lastFxV = r.verdict;
       _energyFlash(); // v18.5：每判定一次，能量线闪一下（看清引擎在干活）
-      // v18.6：判定星屑粒子与星音已按用户要求移除（每刷一个视频弹一次太吵）；_fxStars 函数保留备用
+      // v18.6：判定星屑粒子与星音已按用户要求移除（每刷一个视频弹一次太吵）
     }
     if (state.skipped !== _lastMile) {
       if (state.skipped > 0 && state.skipped % 50 === 0) _confetti();
@@ -2240,13 +1997,18 @@
     if(userPauseMode){setSt('m cy','暂停','暂停中 · 按空格播放或按 S 继续');return;} // v16.0：退出方式提示（§4.6）
     if(userBackMode){setSt('m cp','回看','回看中 · 按 S 或下滚继续');return;} // v16.0：退出方式提示（§4.6）
     if(r.verdict==='userback'){setSt('m cp','回看','回看中 · 按 S 或下滚继续');return;} // v14.2：补 userback 分支，不再落到"读取中"
-    // v16.0：连跳 turbo 标注（§4.6/§6，引擎拼装项——库珀已裁定准予随版落码）
+    // v16.0：连跳 turbo 标注（§4.6/§6，引擎拼装项）
     const _turboSs = state.consecutiveSkips >= 2 ? '连跳加速中' : null;
+    // v20.0：过滤静默失效告警——连续 15 个视频赞数读不到时显式提示，不再"退化成透明人毫无察觉"
+    if (cfg.enabled && cfg.autoSkip && (state.unknownStreak || 0) >= 15) {
+      setSt('m cy', '读取异常', '连续 ' + state.unknownStreak + ' 个赞数读取失败 · 抖音可能改版，低赞过滤可能停摆');
+      return;
+    }
     if(r.verdict==='live'){setSt('m cb','直播',_turboSs||'');}
     else if(r.verdict==='game-shopping'){setSt('m cr','购物',_turboSs||'');}
     else if(r.verdict==='male-skip'){setSt('m cr','男性',_turboSs||'');}
     else if(r.verdict==='music-keep'){setSt('m cg','音乐保留',_turboSs||'汽水音乐');}
-    else if(r.verdict==='female-keep'){setSt('m cp','女生保留',_turboSs||(r.hit?'命中「'+r.hit+'」':''));} // v16.7 [1]：ca 随主题变（红主题下"保留"呈跳过红），回归粉=女生契约，与"女生"计数同色
+    else if(r.verdict==='female-keep'){setSt('m cp',cfg.keepGender==='m'?'男生保留':'女生保留',_turboSs||(r.hit?'命中「'+r.hit+'」':''));} // v20.0：保留对象随芯片切换，粉=保留契约
     else if(r.verdict==='keep'){setSt('m cg',fmt(r.value)+'赞',_turboSs||'达标');}
     else if(r.verdict==='low'){setSt('m cr',fmt(r.value)+'赞',_turboSs||'低赞');}
     else{setSt('m cy','读取中','');}
@@ -2263,7 +2025,31 @@
     if (!cfg.enabled) { userPauseMode = false; userBackMode = false; backArmed = false; markDirty(); render(); }
   };
   $.rlive.onclick=()=>toggleOpt('skipLive',true);
-  $.rfem.onclick=()=>toggleOpt('keepFemale',true);
+  // v20.0：颜值保留芯片点击循环 女生保留→男生保留→关闭→女生保留（默认女生）
+  function syncKeepUi() {
+    const nf = document.getElementById('nf');
+    if (nf && nf.parentElement) {
+      const lab = nf.parentElement.querySelector('.l');
+      if (lab) lab.textContent = cfg.keepGender === 'm' ? '男生' : '女生';
+      nf.parentElement.title = cfg.keepFemale
+        ? (cfg.keepGender === 'm' ? '命中男生词库而保留' : '命中女生词库而保留')
+        : '颜值保留已关闭';
+    }
+    if ($.rfem) {
+      $.rfem.setAttribute('aria-pressed', String(!!cfg.keepFemale));
+      $.rfem.title = cfg.keepFemale
+        ? (cfg.keepGender === 'm' ? '当前：男生保留（点击切换）' : '当前：女生保留（点击切换）')
+        : '颜值保留已关闭（点击恢复女生保留）';
+    }
+  }
+  $.rfem.onclick = () => {
+    if (!cfg.keepFemale) { cfg.keepFemale = true; cfg.keepGender = 'f'; }
+    else if (cfg.keepGender === 'f') cfg.keepGender = 'm';
+    else cfg.keepFemale = false;
+    saveCfg(); invalidate();
+    state.activeVid = null; state.handling = false;
+    syncKeepUi(); markDirty(); render();
+  };
   $.rmus.onclick=()=>toggleOpt('keepMusic',true);
   $.rj.onclick=()=>toggleOpt('autoJ',false);
   // ═══ v18.4：全按钮音效 + 统计格解释（追加监听，不改原 onclick 逻辑）═══
@@ -2280,34 +2066,36 @@
     if (m) m.addEventListener('click', () => SFX[p[1]]());
   });
   if (fab) fab.addEventListener('click', () => { if (!draggedThisPress || curPress !== pressId) SFX.tick(2); });
-  const _statTips = { nk: '脚本判定保留的视频数', ns: '自动跳过的低赞/购物/男频视频数', nl: '跳过的直播场次', nf: '命中女生词库而保留的视频数' };
+  // 背景透明度滑块
+  const _opSl = document.getElementById('dy-opacity');
+  if (_opSl) {
+    try { const _sv = parseInt(localStorage.getItem('dyhlf_op') || '34'); if (_sv >= 0 && _sv <= 95) _opSl.value = _sv; } catch(e) {}
+    const _applyOp = () => {
+      const v = (+_opSl.value) / 100;
+      panel.style.setProperty('--glass', `rgba(14,16,22,${v})`);
+      try { localStorage.setItem('dyhlf_op', _opSl.value); } catch(e) {}
+    };
+    _opSl.addEventListener('input', _applyOp);
+    _applyOp();
+  }
+  const _statTips = { nk: '脚本判定保留的视频数', ns: '自动跳过的低赞/购物视频数', nl: '跳过的直播场次', get nf() { return cfg.keepFemale ? (cfg.keepGender === 'm' ? '命中男生词库而保留的视频数' : '命中女生词库而保留的视频数') : '颜值保留已关闭'; } };
   ['nk','ns','nl','nf'].forEach(id => { const c = document.getElementById(id); if (c && c.parentElement) c.parentElement.title = _statTips[id]; });
   // ═══ v18.6：统计四格点击解压反馈（按下果冻+pop音，可连点；无任何功能含义）═══
-  const _statRgb = { nk: '61,232,160', ns: '255,92,122', nl: '90,176,255', nf: '255,111,168' };
   ['nk', 'ns', 'nl', 'nf'].forEach(id => {
     const c = document.getElementById(id);
     if (!c || !c.parentElement) return;
     const cell = c.parentElement;
     cell.addEventListener('pointerdown', () => {
-      if (_prm) return;
+      if (_prm || !fxOn()) return;
       cell.animate([
         { transform: 'scale(1,1)', easing: 'ease-out' },
         { transform: 'scale(.9,1.1)', offset: .3, easing: 'ease-out' },
         { transform: 'scale(1.04,.95)', offset: .6 },
         { transform: 'scale(1,1)' }
       ], { duration: 320 });
-      const r = cell.getBoundingClientRect();
-      _spawnRise(2, r.left + r.width / 2, r.top + 4, _statRgb[id]);
       SFX.click();
     });
-    cell.addEventListener('click', () => {
-      // v18.9：点一下 +1（计入对应计数，数字滚动+浮字，连点解压；纯 UI 计数，不影响判定）
-      if (id === 'nk') state.kept++;
-      else if (id === 'ns') state.skipped++;
-      else if (id === 'nl') state.liveSkipped++;
-      else if (id === 'nf') state.femaleKept++;
-      markDirty(); render();
-    });
+    // 统计卡点击仅保留动画+音效反馈，不修改任何 state 计数
   });
   // ═══ v18.5：四策略芯片解压反馈（用户拍板）——每次按下果冻挤压+小粒子并发+音效，开关功能不变；
   //     按下动画是果冻回弹不是开关翻转；1 秒内连点同芯片≥3次触发连击彩蛋 ═══
@@ -2316,7 +2104,7 @@
     const b = document.getElementById(id);
     if (!b) return;
     b.addEventListener('pointerdown', () => {
-      if (_prm) return;
+      if (_prm || !fxOn()) return;
       b.animate([
         { transform: 'scale(1,1)', easing: 'ease-out' },
         { transform: 'scale(.92,1.08) translateY(1px)', offset: .25, easing: 'ease-out' },
@@ -2324,8 +2112,6 @@
         { transform: 'scale(.98,1.02)', offset: .75 },
         { transform: 'scale(1,1)' }
       ], { duration: 380 });
-      const r = b.getBoundingClientRect();
-      _spawnRise(3, r.left + r.width / 2, r.top + r.height / 2, _acRgb());
     });
     b.addEventListener('click', () => {
       const now = performance.now();
@@ -2334,8 +2120,6 @@
       if (combo >= 3) {
         _chipCombo.set(id + 'c', 0);
         try { SFX.coin(); } catch (e) {}
-        const r = b.getBoundingClientRect();
-        ['61,232,160', '255,197,61', '90,176,255'].forEach((rgb, i) => _spawnRise(5, r.left + r.width * (.25 + i * .25), r.top, rgb));
       }
     });
   });
@@ -2443,17 +2227,11 @@
     try { document.getElementById('dy')?.remove(); } catch(e){}
     try { document.getElementById('dy-fab')?.remove(); } catch(e){}
   };
-  // v14.2：__dySrc 已在脚本启动时由 fetch(chrome.runtime.getURL('content.js')) 填充，重启真正生效
-  // v16.0 待修 #2：纯控制台/油猴注入时 dyhlf_src 不存在（只有扩展 fetch 路径写入），
-  // v15.2 点标题重启实为空操作——兜底软重启：重入本引导函数（IIFE 具名，闭包内可达），
-  // 不依赖源码；扩展/已有缓存源码时仍优先 eval 最新源码，保留开发者热更新路径。
+  // 热重启：直接重跑引导函数就行，闭包里有
   const _dyRestart = () => {
     try {
-      // v16.1 ⑥：优先软重入（重入引导函数），eval 旧源码仅作兜底；避免执行 localStorage 残旧 v15.2 源码
       if (typeof __dyhlfBoot === 'function') {
         __dyhlfBoot();
-      } else if (typeof window.__dySrc === 'string' && window.__dySrc.length > 1000) {
-        (0, eval)(window.__dySrc);
       }
     } catch (e) {
       console.warn('[FILTER] restart failed:', e);
@@ -2480,7 +2258,12 @@
     if (open) _resetConfirm();
   });
   if (_menu) _menu.addEventListener('click', e => e.stopPropagation());
-  if (_restartMi) _restartMi.addEventListener('click', () => { _closeMenu(); _dyRestart(); });
+    if (_restartMi) _restartMi.addEventListener('click', () => { _closeMenu(); _dyRestart(); });
+    // v20.0：动效总开关（「更多」菜单内）——只关装饰性动效，判定/音效/功能全不受影响
+    const _fxMi = document.getElementById('dy-fxmi');
+    const _fxSync = () => { if (_fxMi) _fxMi.textContent = '动效：' + (cfg.fx !== false ? '开' : '关'); };
+    _fxSync();
+    if (_fxMi) _fxMi.addEventListener('click', () => { cfg.fx = cfg.fx === false; saveCfg(); _fxSync(); try { SFX.tick(4); } catch (e) {} });
   if (_clsMi) _clsMi.addEventListener('click', () => {
     if (!_clsMi.classList.contains('confirm')) {
       _clsMi.classList.add('confirm');
@@ -2494,6 +2277,7 @@
   });
   (()=>{
     const verEl = panel.querySelector('.ver');
+    verEl.textContent = 'v' + VERSION; // v20.0：版本显示改读 VERSION，杜绝面板写死版本号与实际漂移
     verEl.style.cursor = 'pointer';
     verEl.onclick = _dyRestart;
     const tEl = panel.querySelector('.hd .t');
@@ -2511,13 +2295,20 @@
   })();
   sync();render();
   const _restoreUI = () => {
-    if (document.getElementById('dy-fab')) return; // 16.0：悬浮球已被抖音 DOM 更新误删时，重新挂载，保证任何状态下稳定存在
-    fab.id = 'dy-fab';
-    document.body.appendChild(fab);
+    let changed = false;
+    // FAB 被删了就重新挂
+    if (!document.getElementById('dy-fab')) {
+      fab.id = 'dy-fab';
+      document.body.appendChild(fab);
+      changed = true;
+    }
+    // panel 被删了就重新挂（即使 FAB 还在）
     if (!document.getElementById('dy')) {
       panel.id = 'dy';
       document.body.appendChild(panel);
+      changed = true;
     }
+    if (!changed) return;
     markDirty(); render();
     clearTimeout(_closeT);
     panel.classList.remove('closing');
