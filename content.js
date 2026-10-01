@@ -1,6 +1,50 @@
 (function __dyhlfBoot() {
   'use strict';
-  // dyhlf v17.2 · 六AI-UI融合终版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  // dyhlf v18.3 · 红线加固版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  //   v18.3 = v18.2 + 两处真机事故修复 + AI 迭代红线清单。给下一个改这个文件的 AI：
+  //   先把下面的红线读完再动刀；你的任务只许是修「明确报出的 bug」。
+  //   [Z1] 修复 isLiveFast 函数头 5 行被误删：text/result/stable 未定义即用，strict 模式每次调用
+  //        必抛 ReferenceError——skipLive（保留直播关）时全部判定无声死亡、状态卡永久冻结在死前
+  //        旧文案。用户看到的"每个视频都说回看"就是它（冻结点恰是最后一次 userback 判定）。
+  //        node --check 查不出这种错。已按 v16.6 原版补回，见 isLiveFast 处标注
+  //   [Z2] 回看中下滑退出不再受 onWheel 500ms 节流：上滑的滚轮惯性事件连续刷新节流窗，吞掉紧跟
+  //        的第一次下滑（用户要滑两下才退出回看）——加 isExit 旁路，见 onWheel 处标注
+  // ═══════════ AI 迭代红线 · 动刀前必读（违者=回归事故，红队会逐条对照）═══════════
+  // 1. 悬浮球(#dy-fab)永久保留常驻（用户拍板，任何"去掉/合并进面板"方案=抗命）；三态角标已按
+  //    用户要求删除，不许加回。
+  // 2. 空格键零拦截：onKey 严禁出现 Space 分支或 preventDefault（空格=抖音原生暂停，A 案契约）。
+  // 3. 语义色 --c-ok/bad/info/pink/warn/back 写死不跟主题，只许 --ac/--ac-rgb 跟主题色。
+  //    v16.5 曾全量 HSL 派生：红主题下保留/跳过/暂停一色难辨，被红队否决，勿复辟。
+  // 4. 作者卡片检测锚定 #relatedVideoCard（宽>100 + 含「TA的作品」+ checkVisible），严禁改回
+  //    全 body textContent 扫描——「TA的作品」文本常驻 DOM，全页扫描恒真误判 + 每600ms全页
+  //    序列化（v16.5 事故）。关闭态=宽0+内容清空，双信号判关，已真机验证。
+  // 5. currentVid 必须优先锚定 a[href*="/video/"] 数字 id，取不到才退回拼接；严禁删锚定——
+  //    文案渐进加载会让拼接 vid 漂移 → hist 重复入栈、误判回看。
+  // 6. 严禁在 exitUserBack/updatePageMode 里恢复 jDone.clear()——J 是切换键，清了会重按 J 把
+  //    已清屏视频切回未清屏（autoJ 用户可感知回归）。
+  // 7. onWheel 的 isExit 旁路（回看中下滑退出不受节流）严禁删，见 [Z2]。
+  // 8. 辅助回看确认窗 600ms + commentsOpen 豁免（防双退/防评论区误触），勿调回 350ms。
+  // 9. applyThreshold 必须 activeVid=null（拖阈值后当前视频立即重判）；render 里「已停止」分支
+  //    必须在所有状态分支最前（否则停用后恒显「暂停」）。
+  // 10. stop() 清理清单必须完整：_tickTimer/_saveT/_saveTimeT/_bubT/_confirmT/_pathT/_pinTimers/
+  //     _disposers/_uiObs/#dy/#dy-fab/#dy-fx 移除/__dyhlf 置空。你新增的任何定时器/观察者/监听
+  //     必须同步登记进清理清单，漏一个=重启后僵尸链。
+  // 11. 热重启指纹：本头注释 "dyhlf vXX" 必须与 VERSION 字面同步（dyhlf_src 源码校验靠它）；
+  //     版本五处对齐 = 头注释 / VERSION / style 标记 / .ver div / manifest.json。
+  // 12. exitUserBack 尾部 try{clearTimeout(_tickTimer);tick()}catch(e){} 会吞异常——tick 链一死
+  //     全脚本假死且无任何报错。若你改了 tick 路径，必须先把该 catch 改成至少 console.warn(e)，
+  //     严禁无声吞掉。
+  // 13. 判定引擎核心（handleNewVideo/goNext/actionToken 门控/评论挂起/unknown=保留原则/门控①②③④）
+  //     经多轮红队审查验证，严禁以"重构/合并/精简"名义触碰。改 isLiveFast 只许在函数体内部
+  //     增删行：函数签名与开头 5 行（it 判空 / cacheGet / text 定义 / result,stable 声明）
+  //     一个字符都不能少——历史事故见 [Z1]。
+  // 14. 改码纪律：一处一改；行内留 "vXX 修复:" 注释；改完 node --check + 真机注入确认判定出
+  //     数值（保留/跳过计数在动）才算完，不许只跑语法检查就交货。
+  // ═══════════════════════════════════════════════════════════════════════
+  // ── 以下为 v18.2 变更（曜石引擎 UI 全换代）──
+  //   v18.2 仅动 UI 层（迁移自 V3 抖音筛选 v18.html 定稿预览）：CSS/DOM 整块替换 + 5 个 UI 动效模块
+  //   （合成音效引擎/粒子层+持续震动/解压状态卡/滑块撞击微反馈/主题即时预览），新增 #snd 音效开关；
+  //   筛选引擎/点赞读取/视频ID/自动跳转/tick/actionToken/评论/作者页/回看/J/unknown/快捷键语义零改动
   //   v17.2 仅动 UI 层，收编六路迭代并消解冲突：AI1 布局（区块间距统一12px/状态卡副行固定占位防跳）、
   //   AI2 视觉（状态卡与统计格统一浮起表面/FAB 顶光渐变+双层柔影/菜单与气泡阴影收敛）、
   //   AI3 动效（面板关闭 120ms 淡出与入场对称/状态色条 0.25s 过渡/菜单项按压反馈）、
@@ -51,7 +95,7 @@
   //   8) 评论打开时 exitUserBack 不自动 play（滚评论不再误触发播放）
   //   9) 主题全量着色：全部语义色由主题色 HSL 派生（状态卡/计数/FAB 角标随主题换装），
   //      新增 紫/橙/青 主题点共 6 色；女生保留状态条补主题色左缘
-  const VERSION = '17.2';
+  const VERSION = '18.3';
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
@@ -79,6 +123,7 @@
   //      重启兜底软重启（重入引导函数），扩展 eval 最新源码的开发者路径保留
   try { document.getElementById('dy')?.remove(); } catch (e) {}
   try { document.getElementById('dy-fab')?.remove(); } catch (e) {}
+  try { document.getElementById('dy-fx')?.remove(); } catch (e) {} // v18.2：粒子宿主随重启一并清
   try {
     document.querySelectorAll('style').forEach(el => {
       if (el.textContent && (el.textContent.includes('#dy-fab{') || el.textContent.includes('/*dyhlf'))) el.remove();
@@ -421,6 +466,7 @@
     let vid;
     const it = activeItem();
     if (it) {
+      // 【AI红线5】此锚定严禁删——删了 vid 漂移 → hist 重复入栈、误判回看。
       // v16.6 [8]：优先锚定 feed 项内 /video/<数字id> 链接作 vid——昵称/文案渐进加载会变，
       // 拼接 vid 漂移会导致 hist 重复入栈、同一视频重复判定；取不到链接再退回拼接兜底
       const _a = it.querySelector('a[href*="/video/"]');
@@ -442,6 +488,11 @@
   // v14.1：isLiveFast 加"稳定性门控"——DOM 未稳定时不写缓存，让下次 tick 重扫
   // v14.3：新增 preText 参数，由调用方传入一次性序列化的 feed 全文，避免重复 textContent
   function isLiveFast(it = activeItem(), vid = currentVid(), preText) {
+    // 【AI红线13】本函数签名与开头 5 行严禁再删/再改——历史上删过一次（[Z1]），
+    // skipLive 开启即全判定无声死亡、状态卡冻结。
+    // v18.2 修复：以下 5 行函数头在改「scanned<5 安全语义」时被误删（text/result/stable 未定义
+    // 直接用，strict 模式下每次调用必抛 ReferenceError，skipLive 开启时全部判定无声死亡）——
+    // 按 v16.6 原版补回
     if (!it) return false;
     const cached = cacheGet(vidLiveCache, vid);
     if (cached !== null) return cached;
@@ -940,6 +991,8 @@
       if (!commentsOpen(true) && _v && _v.paused && !_v.ended) _v.play().catch(()=>{});
     } catch (e) {}
     markDirty();
+    // 【AI红线12】此 catch 会吞异常：tick 链死=全脚本假死且无报错。你若改过 tick 路径，
+    // 必须先把它改成 console.warn(e) 再交货。
     try { clearTimeout(_tickTimer); tick(); } catch(e){}
   }
   function onKey(e) {
@@ -970,7 +1023,11 @@
   function onWheel(e) {
     if (syntheticDepth > 0) return;
     const now = performance.now();
-    if (now - _lastWheel < 500) return;
+    // 【AI红线7】isExit 旁路严禁删——删了用户回看后要滑两下才能退出（真机实测事故）。
+    // v18.2 修复：回看中下滑退出不受 500ms 节流——上滑的滚轮惯性事件会连续刷新节流窗，
+    // 把紧跟的第一次下滑吞掉（用户实测"要滑两下才判定继续往下滑"）。退出方向必须即时响应。
+    const isExit = userBackMode && e.deltaY > 10;
+    if (!isExit && now - _lastWheel < 500) return;
     if (e.deltaY < -10) { _lastWheel = now; enterUserBack(true); }
     else if (e.deltaY > 10) { _lastWheel = now; exitUserBack(); }
   }
@@ -999,145 +1056,183 @@
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v17.2 · 视觉草案 v2（达芬奇-视觉体验专家）
-  基于：诺曼《交互规格 v16》§3.1 DOM + §5 组件规范 · 集成契约 v1（含修订：BASE 运行时量取、尺寸自由）
-  落码方式：整块并入 content.js style 模板；含自清理标记（头部 dyhlf 注释 + #dy-fab 规则）
-  依赖：--ac / --ac-rgb 由引擎 _applyTheme 注入（需同步扩展到 #dy-fab，1 行，见规格 §7）
-  品牌色 tint 一律 rgba(var(--ac-rgb),x)，自动跟主题，零引擎改动 */
+  style.textContent = `/*dyhlf-v18.3 · 曜石引擎（本行是热重启版本指纹，改动需与 VERSION 同步）
+  UI 全换代：深空底色 / 顶部能量线(运行态点亮) / 状态卡能量核心(tint渐变+左能量条+脉冲点)
+  / 滑块十档刻度+彩底值芯片 / 策略芯片发光态 / 统计格顶色条 / FAB 主题光环 / blur 入场动效
+  契约不变：#dy/#dy-fab 变量块、--ac/--ac-rgb 主题注入、全部元素 ID 与语义类、自清理标记 */
 #dy,#dy-fab{
-  --w-p:224px;
+  --w-p:240px;
   --ac:#FF3B5C;--ac-rgb:255,59,92;
-  --t1:rgba(255,255,255,.96);--t2:rgba(255,255,255,.70);--t3:rgba(255,255,255,.48);
-  --c-ok:#34E39C;--c-bad:#FF5C7A;--c-info:#5AB0FF;--c-pink:#FF6FA8;--c-warn:#FFC53D;--c-back:#B389FF;
-  --glass:rgba(13,15,20,.26);--glass-2:rgba(255,255,255,.07);--menu:rgba(18,20,25,.58);
-  --line:rgba(255,255,255,.14);--line-2:rgba(255,255,255,.10);
-  --r-card:12px;--r-ctrl:10px;
+  --t1:rgba(255,255,255,.96);--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.40);
+  /*AI红线3：语义色写死勿跟主题*/--c-ok:#3DE8A0;--c-bad:#FF5C7A;--c-info:#5AB0FF;--c-pink:#FF6FA8;--c-warn:#FFC53D;--c-back:#B389FF;
+  --glass:rgba(10,11,16,.68);--glass-2:rgba(255,255,255,.045);--menu:rgba(16,18,24,.86);
+  --line:rgba(255,255,255,.12);--line-2:rgba(255,255,255,.08);
+  --r-card:14px;--r-ctrl:11px;
   --f: -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
 }
-/* ============ 面板骨架 ============ */
-#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(16px) saturate(2.2);-webkit-backdrop-filter:blur(16px) saturate(2.2);border-radius:20px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;max-width:calc(100vw - 8px);user-select:none;box-shadow:0 16px 48px rgba(0,0,0,.30),0 2px 10px rgba(0,0,0,.22);zoom:1;animation:dyIn .18s cubic-bezier(.2,.9,.3,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-#dy::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px rgba(255,255,255,.05)}
+/* ============ 容器：曜石底 + 能量线 ============ */
+#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(24px) saturate(1.8);-webkit-backdrop-filter:blur(24px) saturate(1.8);border-radius:18px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;max-width:calc(100vw - 8px);user-select:none;box-shadow:0 24px 64px rgba(0,0,0,.48),0 4px 16px rgba(0,0,0,.32),0 0 0 1px rgba(255,255,255,.03);zoom:1;animation:dyIn .28s cubic-bezier(.2,.9,.25,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+#dy::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 0 0 1px rgba(255,255,255,.03)}
+/* 顶部能量线：运行时点亮并缓慢呼吸 —— 一眼可辨「引擎在跑」 */
+#dy::after{content:'';position:absolute;top:0;left:30px;right:30px;height:2px;border-radius:0 0 3px 3px;background:linear-gradient(90deg,transparent,rgba(var(--ac-rgb),.9) 50%,transparent);box-shadow:0 0 12px 1px rgba(var(--ac-rgb),.45);opacity:0;transition:opacity .45s;pointer-events:none}
+#dy:has(.sw.on)::after{opacity:1;animation:dyEnergy 5.2s ease-in-out infinite}
 #dy .bd{padding:0}
 /* ============ A 状态层：标题 + 运行开关 ============ */
-#dy .hd{padding:13px 14px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
-#dy .hact{display:flex;align-items:center}
-#dy .hd .t{font-size:13px;font-weight:500;letter-spacing:.3px;color:var(--t2);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
-/* 运行呼吸灯：纯 CSS（.t::before + :has(.sw.on)），零 DOM/JS 改动 */
-#dy .hd .t::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--t3);margin-right:7px;vertical-align:2px;transition:background .2s}
-#dy .hd:has(.sw.on) .t::before{background:var(--ac);animation:dyBreath 2.2s ease-out infinite}
-#dy .sw{position:relative;width:38px;height:20px;border-radius:10px;background:rgba(255,255,255,.14);cursor:pointer;flex:none;transition:background .18s}
-#dy .sw::before{content:'';position:absolute;inset:-10px -7px}/* 命中区扩展 */
-#dy .sw::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4);transition:transform .22s cubic-bezier(.34,1.56,.64,1)}
-#dy .sw.on{background:var(--ac)}
-#dy .sw.on::after{transform:translateX(18px)}
-/* ============ A 状态层：状态卡 ============ */
-#dy .st{position:relative;margin:0 14px 12px;padding:9px 12px 9px 15px;background:var(--glass-2);border:1px solid var(--line-2);border-radius:var(--r-card);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
-#dy .st::before{content:'';position:absolute;left:0;top:16%;bottom:16%;width:3px;border-radius:0 3px 3px 0;background:var(--t3);transition:background .25s ease}
-#dy .st:has(.m.cg)::before{background:var(--c-ok)}
-#dy .st:has(.m.cr)::before{background:var(--c-bad)}
-#dy .st:has(.m.cb)::before{background:var(--c-info)}
-#dy .st:has(.m.cp)::before{background:var(--c-pink)}
-#dy .st:has(.m.cy)::before{background:var(--c-warn)}
-#dy .st:has(.m.ca)::before{background:var(--ac)}
-#dy .st .m{font-size:18px;font-weight:700;letter-spacing:.2px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--t1);animation:dyStIn .12s ease-out}
-#dy .st .s{font-size:11px;color:var(--t2);margin-top:2px;animation:dyStIn .12s ease-out;min-height:1.5em;overflow-wrap:anywhere}
+#dy .hd{padding:14px 16px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+#dy .hact{display:flex;align-items:center;gap:8px}
+/* v18.2 音效开关（静音态持久化 localStorage dyhlf_snd） */
+#dy .snd{width:26px;height:26px;border-radius:9px;border:0;background:rgba(255,255,255,.06);color:var(--t2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:color .15s,background .15s,transform .1s;flex:none}
+#dy .snd svg{width:15px;height:15px}
+#dy .snd:hover{color:#fff;background:rgba(255,255,255,.11)}
+#dy .snd:active{transform:scale(.88)}
+#dy .snd .mu{display:none}
+#dy .snd.off{color:var(--t3)}
+#dy .snd.off .wv{display:none}
+#dy .snd.off .mu{display:block}
+#dy .hd .t{font-size:12px;font-weight:600;letter-spacing:.8px;color:var(--t2);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+#dy .hd .t::before{content:'';display:inline-block;width:7px;height:7px;border-radius:2.5px;background:var(--t3);margin-right:8px;vertical-align:1px;transition:background .25s,box-shadow .25s}
+#dy .hd:has(.sw.on) .t::before{background:var(--ac);box-shadow:0 0 9px rgba(var(--ac-rgb),.85);animation:dyBreath 2.4s ease-in-out infinite}
+#dy .sw{position:relative;width:44px;height:24px;border-radius:12px;background:rgba(255,255,255,.10);border:1px solid var(--line-2);cursor:pointer;flex:none;transition:background .2s,box-shadow .2s,border-color .2s}
+#dy .sw::before{content:'';position:absolute;inset:-11px -8px}/* 命中区扩展 */
+#dy .sw::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.45);transition:transform .24s cubic-bezier(.34,1.56,.64,1)}
+#dy .sw.on{background:linear-gradient(135deg,rgba(var(--ac-rgb),.92),rgba(var(--ac-rgb),.72));border-color:rgba(255,255,255,.18);box-shadow:0 0 14px rgba(var(--ac-rgb),.35),inset 0 1px 1px rgba(255,255,255,.28)}
+#dy .sw.on::after{transform:translateX(20px)}
+/* ============ A 状态层：状态卡「能量核心」============ */
+#dy .st{--sc:var(--t3);--sc-rgb:255,255,255;
+  position:relative;margin:0 16px 14px;padding:12px 14px 11px 18px;border-radius:var(--r-card);overflow:hidden;
+  background:linear-gradient(135deg,rgba(var(--sc-rgb),.13),rgba(var(--sc-rgb),.03) 62%),rgba(255,255,255,.03);
+  border:1px solid rgba(var(--sc-rgb),.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  transition:background .35s,border-color .35s}
+#dy .st:has(.m.cg){--sc:var(--c-ok);--sc-rgb:61,232,160}
+#dy .st:has(.m.cr){--sc:var(--c-bad);--sc-rgb:255,92,122}
+#dy .st:has(.m.cb){--sc:var(--c-info);--sc-rgb:90,176,255}
+#dy .st:has(.m.cp){--sc:var(--c-pink);--sc-rgb:255,111,168}
+#dy .st:has(.m.cy){--sc:var(--c-warn);--sc-rgb:255,197,61}
+#dy .st:has(.m.ca){--sc:var(--ac);--sc-rgb:var(--ac-rgb)}
+#dy .st::before{content:'';position:absolute;left:0;top:13%;bottom:13%;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--sc),rgba(var(--sc-rgb),.15));box-shadow:0 0 10px rgba(var(--sc-rgb),.55);transition:background .35s,box-shadow .35s}
+#dy .st .m{display:flex;align-items:center;gap:9px;font-size:20px;font-weight:700;letter-spacing:.3px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--t1);animation:dyStIn .16s ease-out;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+#dy .st .m::before{content:'';flex:none;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor;animation:dyPulse 2.1s ease-in-out infinite}
+#dy .st .s{font-size:11px;color:var(--t2);margin-top:4px;animation:dyStIn .16s ease-out;min-height:1.5em;overflow-wrap:anywhere}
+/* —— v18.2 解压卡片：可连点（果冻挤压 + 点击涟漪），触屏防双击缩放 —— */
+#dy .st{cursor:pointer;touch-action:manipulation}
+#dy .rp{position:absolute;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.45),rgba(var(--sc-rgb),.25) 55%,transparent 70%);transform:translate(-50%,-50%) scale(0);pointer-events:none;animation:dyRp .55s cubic-bezier(.2,.7,.4,1) forwards}
+@keyframes dyRp{60%{opacity:.85}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+/* —— v18.2 粒子宿主：挂在 body 上、面板之下（stop() 需 remove）—— */
+#dy-fx{position:fixed;inset:0;pointer-events:none;z-index:2147483600;overflow:hidden}
+#dy-fx i{position:absolute;border-radius:50%;will-change:transform,opacity}
 #dy .m.cg{color:var(--c-ok)}
 #dy .m.cr{color:var(--c-bad)}
 #dy .m.cb{color:var(--c-info)}
 #dy .m.cp{color:var(--c-pink)}
 #dy .m.cy{color:var(--c-warn)}
 #dy .m.ca{color:var(--ac)}
-/* ============ A 状态层：首次引导条 ============ */
-#dy .guide{margin:0 14px 12px;padding:8px 10px;background:rgba(255,197,61,.08);border:1px solid rgba(255,197,61,.26);border-radius:var(--r-card);display:flex;align-items:center;gap:8px;overflow:hidden}
+/* ============ A 状态层：首次引导条（主题色信息卡）============ */
+#dy .guide{margin:0 16px 14px;padding:9px 11px;background:linear-gradient(135deg,rgba(var(--ac-rgb),.12),rgba(var(--ac-rgb),.04));border:1px solid rgba(var(--ac-rgb),.3);border-radius:var(--r-card);display:flex;align-items:center;gap:8px;overflow:hidden}
 #dy .guide .gt{flex:1;font-size:11px;line-height:1.5;color:var(--t2)}
-#dy .guide .gok{flex:none;font-family:inherit;font-size:11px;font-weight:600;color:var(--c-warn);background:rgba(255,197,61,.14);border:none;border-radius:8px;padding:3px 9px;cursor:pointer;transition:background .15s}
-#dy .guide .gok:hover{background:rgba(255,197,61,.24)}
-#dy .guide .gok:active{transform:scale(.95)}
-/* ============ B 控制层：阈值滑块（28px 命中区 + 档位气泡）============ */
-#dy .slw{padding:0 14px;margin-bottom:12px}
-#dy .slh{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}
-#dy .slh .lb{font-size:12px;font-weight:500;color:var(--t2)}
-#dy .slh .vl{font-size:11px;font-weight:600;color:var(--ac);background:rgba(var(--ac-rgb),.16);padding:1px 8px 2px;border-radius:7px;letter-spacing:.2px}
-#dy .slwrap{position:relative;height:30px;display:flex;align-items:center;cursor:pointer}
-#dy .slwrap::before{content:'';position:absolute;inset:-5px 0;pointer-events:none}/* 命中区扩至 40px 高 */
-#dy .sl{-webkit-appearance:none;appearance:none;display:block;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,.16);outline:none;margin:0;cursor:pointer}
-#dy .sl::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 6px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.25);cursor:pointer;transition:transform .12s,box-shadow .12s}
-#dy .sl:hover::-webkit-slider-thumb{transform:scale(1.12)}
-#dy .sl:active::-webkit-slider-thumb{transform:scale(1.25);box-shadow:0 0 0 8px rgba(var(--ac-rgb),.18)}
-#dy .sl::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 6px rgba(0,0,0,.5);cursor:pointer}
-#dy .bub{position:absolute;bottom:calc(100% + 5px);transform:translateX(-50%);background:var(--menu);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--t1);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 4px 12px rgba(0,0,0,.36)}
+#dy .guide .gok{flex:none;font-family:inherit;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(135deg,rgba(var(--ac-rgb),.9),rgba(var(--ac-rgb),.68));border:none;border-radius:9px;padding:4px 10px;cursor:pointer;box-shadow:0 2px 10px rgba(var(--ac-rgb),.3);transition:filter .15s}
+#dy .guide .gok:hover{filter:brightness(1.18)}
+#dy .guide .gok:active{transform:scale(.94)}
+/* ============ B 控制层：阈值滑块（刻度 + 彩底值芯片）============ */
+#dy .slw{padding:0 16px;margin-bottom:14px}
+#dy .slh{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+#dy .slh .lb{font-size:12px;font-weight:600;letter-spacing:.5px;color:var(--t2)}
+#dy .slh .vl{font-size:11px;font-weight:700;color:#fff;background:linear-gradient(135deg,rgba(var(--ac-rgb),.95),rgba(var(--ac-rgb),.7));padding:2px 10px 3px;border-radius:8px;letter-spacing:.3px;box-shadow:0 2px 10px rgba(var(--ac-rgb),.32)}
+#dy .slwrap{position:relative;height:32px;display:flex;align-items:center;cursor:pointer}
+#dy .slwrap::before{content:'';position:absolute;inset:-5px 0;pointer-events:none}/* 命中区扩至 42px 高 */
+#dy .slwrap::after{content:'';position:absolute;left:9px;right:9px;bottom:calc(50% + 5px);height:2.5px;pointer-events:none;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1.5px,transparent 1.5px calc((100% - 1.5px)/9))}
+#dy .sl{-webkit-appearance:none;appearance:none;display:block;width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.13);outline:none;margin:0;cursor:pointer}
+#dy .sl::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.3),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer;transition:transform .12s,box-shadow .12s}
+#dy .sl:hover::-webkit-slider-thumb{transform:scale(1.15)}
+#dy .sl:active::-webkit-slider-thumb{transform:scale(1.3);box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 7px rgba(var(--ac-rgb),.15),0 0 18px rgba(var(--ac-rgb),.5)}
+#dy .sl::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer}
+#dy .bub{position:absolute;bottom:calc(100% + 7px);transform:translateX(-50%);background:var(--menu);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(var(--ac-rgb),.42);border-radius:9px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--t1);white-space:nowrap;pointer-events:none;opacity:0;transition:left .1s ease-out,opacity .15s;box-shadow:0 6px 18px rgba(0,0,0,.42),0 0 14px rgba(var(--ac-rgb),.18)}
 #dy .bub::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:var(--menu)}
 #dy .bub.show{opacity:1}
-#dy .sle{display:flex;justify-content:space-between;font-size:11px;color:var(--t3)}
-/* ============ B 控制层：策略开关 2×2（图标化）============ */
-#dy .rg{display:grid;grid-template-columns:1fr 1fr;gap:8px 6px;padding:0 14px;margin-bottom:12px;min-width:0}
-#dy .rg button{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;height:32px;border-radius:var(--r-ctrl);border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--t2);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:color .16s,border-color .16s,background .16s,transform .1s;-webkit-font-smoothing:antialiased;min-width:0;white-space:nowrap}
-#dy .rg button::after{content:'';position:absolute;inset:-4px 0;border-radius:12px}/* 命中区扩至 40px 高 */
-#dy .rg button svg{width:12px;height:12px;flex:none;opacity:.75;transition:opacity .16s}
-#dy .rg button:hover{color:var(--t1);border-color:rgba(255,255,255,.22)}
-#dy .rg button:active{transform:scale(.95);box-shadow:0 0 0 4px rgba(var(--ac-rgb),.16)}
-#dy .rg button.on{color:var(--ac);font-weight:600;border-color:rgba(var(--ac-rgb),.5);background:rgba(var(--ac-rgb),.14)}
-#dy .rg button.on svg{opacity:1}
-/* ============ C 数据层：统计四格 + 时间账本 ============ */
-#dy .nm{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 14px;margin-bottom:12px;min-width:0}
-#dy .nm>div{background:var(--glass-2);border:1px solid var(--line-2);border-radius:var(--r-ctrl);padding:7px 2px 6px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);min-width:0}
-#dy .nm .v{font-size:14px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
-#dy .nm .l{font-size:11px;color:var(--t3);margin-top:3px;font-weight:500;letter-spacing:.5px}
+#dy .sle{display:flex;justify-content:space-between;font-size:10px;color:var(--t3);letter-spacing:.4px}
+/* —— v18.2 滑块动效：跨档微反馈（拇指挤压/刻度闪/值芯片弹跳）+ 尽头撞击（拇指弹性爆闪）—— */
+@keyframes dyThumbTick{0%{transform:scale(1.3)}45%{transform:scale(1.34,.72)}100%{transform:scale(1.3)}}
+#dy .sl.tk::-webkit-slider-thumb{animation:dyThumbTick .13s cubic-bezier(.3,.7,.4,1)}
+@keyframes dyThumbImp{0%{transform:scale(1.3)}30%{transform:scale(1.62)}100%{transform:scale(1.3)}}
+#dy .sl.imp::-webkit-slider-thumb{animation:dyThumbImp .3s cubic-bezier(.16,1.2,.3,1);box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.3),0 0 22px 5px rgba(var(--ac-rgb),.6)}
+@keyframes dyTickF{0%{filter:brightness(2)}100%{filter:brightness(1)}}
+#dy .slwrap.tk::after{animation:dyTickF .16s ease-out}
+@keyframes dyVlPop{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}
+#dy .slh .vl.pop{animation:dyVlPop .2s cubic-bezier(.2,.9,.3,1.4)}
+/* ============ B 控制层：策略芯片 2×2 ============ */
+#dy .rg{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px;margin-bottom:14px;min-width:0}
+#dy .rg button{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;height:36px;border-radius:var(--r-ctrl);border:1px solid var(--line-2);background:rgba(255,255,255,.035);color:var(--t2);font-family:inherit;font-size:12px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:color .16s,border-color .16s,background .16s,box-shadow .16s,transform .1s;-webkit-font-smoothing:antialiased;min-width:0;white-space:nowrap}
+#dy .rg button::after{content:'';position:absolute;inset:-4px 0;border-radius:14px}/* 命中区扩至 44px 高 */
+#dy .rg button svg{width:13px;height:13px;flex:none;opacity:.72;transition:opacity .16s,filter .16s}
+#dy .rg button:hover{color:var(--t1);border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.06)}
+#dy .rg button:active{transform:scale(.95)}
+#dy .rg button.on{color:var(--ac);border-color:rgba(var(--ac-rgb),.48);background:linear-gradient(135deg,rgba(var(--ac-rgb),.17),rgba(var(--ac-rgb),.06));box-shadow:0 0 14px rgba(var(--ac-rgb),.13),inset 0 1px 0 rgba(255,255,255,.07)}
+#dy .rg button.on svg{opacity:1;filter:drop-shadow(0 0 4px rgba(var(--ac-rgb),.55))}
+/* ============ C 数据层：统计四格（顶色条 + 微光数字）============ */
+#dy .nm{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 16px;margin-bottom:14px;min-width:0}
+#dy .nm>div{position:relative;overflow:hidden;background:var(--glass-2);border:1px solid var(--line-2);border-radius:12px;padding:10px 2px 8px;text-align:center;--dc:var(--t3);transition:background .15s}
+#dy .nm>div:hover{background:rgba(255,255,255,.07)}
+#dy .nm>div::before{content:'';position:absolute;top:0;left:22%;right:22%;height:1.5px;border-radius:2px;background:var(--dc);opacity:.7;box-shadow:0 0 8px var(--dc)}
+#dy .nm .v{font-size:15px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;text-shadow:0 0 12px currentColor}
+#dy .nm .l{font-size:10px;color:var(--t3);margin-top:4px;font-weight:600;letter-spacing:1.5px}
 #dy .cg{color:var(--c-ok)}
 #dy .cr{color:var(--c-bad)}
 #dy .cb{color:var(--c-info)}
 #dy .cp{color:var(--c-pink)}
 #dy .cy{color:var(--c-warn)}
-#dy .time{display:flex;flex-direction:column;gap:3px;padding:0 14px 12px;font-size:11px;letter-spacing:.2px;overflow-wrap:anywhere}
+#dy .time{display:flex;flex-direction:column;gap:4px;padding:0 16px 14px;font-size:11px;letter-spacing:.2px;overflow-wrap:anywhere}
 #dy #tNow{color:var(--t2)}
 #dy #tSave{color:var(--t3)}
-#dy .time .hi{color:var(--ac);font-weight:600;text-shadow:0 0 12px rgba(var(--ac-rgb),.45)}
+#dy .time .hi{color:var(--ac);font-weight:700;text-shadow:0 0 14px rgba(var(--ac-rgb),.5)}
 /* ============ D 底部：更多菜单 + 主题点 + 版本 ============ */
-#dy .ft{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 14px 12px;border-top:1px solid var(--line-2)}
+#dy .ft{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 16px 13px;border-top:1px solid var(--line-2);background:linear-gradient(180deg,rgba(255,255,255,.018),transparent 70%)}
 #dy .more{position:relative;justify-self:start}
-#dy .mbtn{position:relative;width:28px;height:28px;border-radius:var(--r-ctrl);border:none;background:none;color:var(--t2);font-family:inherit;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,background .15s}
-#dy .mbtn::after{content:'';position:absolute;inset:-6px;border-radius:12px}/* 命中区 40px */
-#dy .mbtn:hover{color:var(--t1);background:rgba(255,255,255,.08)}
-#dy .mbtn:active{transform:scale(.95);box-shadow:0 0 0 4px rgba(var(--ac-rgb),.16)}
-#dy .menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:132px;background:var(--menu);backdrop-filter:blur(14px) saturate(2.0);-webkit-backdrop-filter:blur(14px) saturate(2.0);border:1px solid var(--line);border-radius:12px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,.42),0 2px 8px rgba(0,0,0,.22);animation:dyMenuIn .15s ease-out}
-#dy .menu .mi{font-size:12px;padding:8px 10px;border-radius:8px;color:var(--t1);cursor:pointer;white-space:nowrap;transition:background .12s,transform .1s}
-#dy .menu .mi:hover{background:rgba(255,255,255,.08)}
+#dy .mbtn{position:relative;width:30px;height:30px;border-radius:var(--r-ctrl);border:none;background:none;color:var(--t2);font-family:inherit;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,background .15s,transform .1s}
+#dy .mbtn::after{content:'';position:absolute;inset:-6px;border-radius:14px}/* 命中区 42px */
+#dy .mbtn:hover{color:var(--t1);background:rgba(255,255,255,.09)}
+#dy .mbtn:active{transform:scale(.92)}
+#dy .menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:138px;background:var(--menu);backdrop-filter:blur(16px) saturate(2.0);-webkit-backdrop-filter:blur(16px) saturate(2.0);border:1px solid var(--line);border-radius:13px;padding:5px;box-shadow:0 14px 40px rgba(0,0,0,.5),0 3px 10px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.04);animation:dyMenuIn .16s cubic-bezier(.2,.9,.3,1)}
+#dy .menu .mi{font-size:12px;padding:9px 12px;border-radius:9px;color:var(--t1);cursor:pointer;white-space:nowrap;transition:background .12s,transform .1s}
+#dy .menu .mi:hover{background:rgba(255,255,255,.09)}
 #dy .menu .mi.danger{color:var(--c-bad)}
-#dy .menu .mi.danger:hover{background:rgba(255,92,122,.12)}
-#dy .menu .mi.danger.confirm{background:var(--c-bad);color:#fff;font-weight:600}
+#dy .menu .mi.danger:hover{background:rgba(255,92,122,.13)}
+#dy .menu .mi.danger.confirm{background:var(--c-bad);color:#fff;font-weight:700;box-shadow:0 0 14px rgba(255,92,122,.4)}
 #dy .menu .mi:active{transform:scale(.97);background:rgba(255,255,255,.14)}
-#dy .menu .sep{height:1px;margin:4px 8px;background:var(--line-2)}
-#dy .tm{display:flex;align-items:center;gap:7px;justify-self:center}
-#dy .tm i{position:relative;width:10px;height:10px;border-radius:50%;cursor:pointer;transition:transform .15s,box-shadow .15s}
-#dy .tm i::after{content:'';position:absolute;inset:-9px;border-radius:50%}/* 命中区 28px */
-#dy .tm i:hover{transform:scale(1.25)}
-#dy .tm i.on{box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 0 4px rgba(0,0,0,.45)}
-#dy .ver{font-size:11px;color:var(--t3);justify-self:end;cursor:default}
-/* ============ 缩放手柄（可见化：0.35 → hover 0.7）============ */
+#dy .menu .sep{height:1px;margin:5px 9px;background:var(--line-2)}
+#dy .tm{display:flex;align-items:center;gap:8px;justify-self:center}
+#dy .tm i{position:relative;width:11px;height:11px;border-radius:50%;cursor:pointer;transition:transform .16s,box-shadow .16s}
+#dy .tm i::after{content:'';position:absolute;inset:-9px;border-radius:50%}/* 命中区 29px */
+#dy .tm i:hover{transform:scale(1.35)}
+#dy .tm i.on{box-shadow:0 0 0 2px rgba(10,11,16,.9),0 0 0 3.5px rgba(255,255,255,.85),0 0 12px 1px rgba(255,255,255,.35);transform:scale(1.12)}
+#dy .ver{font-size:11px;color:rgba(255,255,255,.5);justify-self:end;cursor:default;transition:color .15s}
+#dy .ver:hover{color:var(--t2)}
+/* ============ 缩放手柄 ============ */
 #dy .rs{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:5;background:none;border:0;opacity:.35;transition:opacity .2s}
 #dy .rs::after{content:'';position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:2px solid var(--t2);border-bottom:2px solid var(--t2);border-radius:0 0 3px 0}
 #dy .rs::before{content:'';position:absolute;inset:-7px}/* 命中区扩展 */
 #dy:hover .rs{opacity:.7}
 #dy .rs:hover{opacity:1}
-  /* ============ FAB：squircle 玻璃 + 漏斗图标（v16.6 [1] 三态角标已删）============ */
-  #dy-fab{position:fixed;left:20px;top:36px;width:40px;height:40px;border-radius:13px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.02) 60%,rgba(255,255,255,0)),var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border:1px solid rgba(255,255,255,.15);box-shadow:0 6px 16px rgba(0,0,0,.28),0 1px 4px rgba(0,0,0,.20);transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .18s;touch-action:none;padding:0}
-  #dy-fab::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 0 0 1px rgba(255,255,255,.05)}
-  #dy-fab:hover{transform:scale(1.07);border-color:rgba(var(--ac-rgb),.55)}
-  #dy-fab:active{transform:scale(.94)}
-  #dy-fab svg{width:18px;height:18px;color:var(--ac);filter:drop-shadow(0 2px 5px rgba(var(--ac-rgb),.35))}
-  /* ============ 焦点可见性（键盘用户）============ */
-  #dy :focus-visible,#dy-fab:focus-visible{outline:2px solid rgba(255,255,255,.55);outline-offset:2px}
-  #dy .sl:focus-visible{outline-offset:6px}
+/* ============ FAB：曜石底 + 主题光环 ============ */
+#dy-fab{position:fixed;left:20px;top:36px;width:44px;height:44px;border-radius:15px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.03) 55%,rgba(255,255,255,0)),var(--glass);backdrop-filter:blur(20px) saturate(1.7);-webkit-backdrop-filter:blur(20px) saturate(1.7);border:1px solid rgba(var(--ac-rgb),.42);box-shadow:0 8px 22px rgba(0,0,0,.42),0 2px 6px rgba(0,0,0,.3),0 0 18px rgba(var(--ac-rgb),.2);transition:transform .2s cubic-bezier(.34,1.56,.64,1),border-color .2s,box-shadow .2s;touch-action:none;padding:0}
+#dy-fab::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.04)}
+#dy-fab:hover{transform:scale(1.08) translateY(-1px);border-color:rgba(var(--ac-rgb),.68);box-shadow:0 10px 26px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.3),0 0 28px rgba(var(--ac-rgb),.35)}
+#dy-fab:active{transform:scale(.93)}
+#dy-fab svg{width:20px;height:20px;color:var(--ac);filter:drop-shadow(0 0 7px rgba(var(--ac-rgb),.55))}
+/* ============ 焦点可见性（键盘用户）============ */
+#dy :focus-visible,#dy-fab:focus-visible{outline:2px solid rgba(255,255,255,.55);outline-offset:2px}
+#dy .sl:focus-visible{outline-offset:7px}
 /* ============ 动效 ============ */
-@keyframes dyIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
-@keyframes dyBreath{0%{box-shadow:0 0 0 0 rgba(var(--ac-rgb),.4)}75%{box-shadow:0 0 0 5px rgba(var(--ac-rgb),0)}100%{box-shadow:0 0 0 6px rgba(var(--ac-rgb),0)}}
-@keyframes dyStIn{from{opacity:0;transform:translateX(4px)}to{opacity:1;transform:none}}
-@keyframes dyMenuIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-@keyframes dyOut{to{opacity:0;transform:translateY(6px) scale(.97)}}
+@keyframes dyIn{from{opacity:0;transform:translateY(16px) scale(.96);filter:blur(8px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes dyOut{to{opacity:0;transform:translateY(8px) scale(.97);filter:blur(4px)}}
+@keyframes dyBreath{0%,100%{opacity:.55;transform:scale(.88)}50%{opacity:1;transform:scale(1)}}
+@keyframes dyPulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes dyEnergy{0%,100%{filter:brightness(.7)}50%{filter:brightness(1.4)}}
+@keyframes dyStIn{from{opacity:0;transform:translateX(6px);filter:blur(3px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes dyMenuIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
 #dy.closing{animation:dyOut .12s ease-in both;pointer-events:none}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  #dy,#dy-fab{background:rgba(13,15,20,.82)}
-  #dy .menu{background:rgba(18,20,25,.92)}
+  #dy,#dy-fab{background:rgba(10,11,16,.9)}
+  #dy .menu{background:rgba(16,18,24,.94)}
 }
 `;
   document.head.appendChild(style);
@@ -1146,13 +1241,14 @@
   panel.innerHTML = `
 <div class="hd" id="dd">
     <span class="t" title="快捷键：W/上滚 回看 · S/下滚 继续 · 空格=暂停/恢复（暂停时自动刷也停）&#10;点击标题或版本号可重启脚本">别做算法里的困兽</span>
-  <div class="hact">
+    <div class="hact">
+    <button class="snd" id="snd" title="音效开关" aria-pressed="true" aria-label="音效开关"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.6l4.9 3.9V5.6L7.6 9.5H4z" fill="currentColor"/><path class="wv" d="M15.8 9a4.4 4.4 0 010 6M18.4 6.6a8 8 0 010 10.8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path class="mu" d="M15 9.5l6 5M21 9.5l-6 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></button>
     <div class="sw on" id="run" role="switch" aria-checked="true" title="开始/停止"></div>
-  </div>
+    </div>
 </div>
 <div class="bd">
   <div class="st">
-    <div class="m" id="sm" aria-live="polite">读取中</div>
+    <div class="m cg" id="sm" aria-live="polite">读取中</div>
     <div class="s" id="ss"></div>
   </div>
   <div class="guide" id="dy-guide" style="display:none">
@@ -1171,13 +1267,13 @@
     <button id="rfem" aria-pressed="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21l-1.5-1.35C5.4 15.1 2 12.2 2 8.35 2 5.4 4.4 3 7.35 3c1.7 0 3.35.8 4.65 2.15C13.3 3.8 14.95 3 16.65 3 19.6 3 22 5.4 22 8.35c0 3.85-3.4 6.75-8.5 11.3L12 21z"/></svg>颜值保留</button>
     <button id="rj" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V6a2 2 0 0 1 2-2h3M20 9V6a2 2 0 0 0-2-2h-3M4 15v3a2 2 0 0 0 2 2h3M20 15v3a2 2 0 0 1-2 2h-3"/></svg>自动清屏</button>
     <button id="rmus" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5.5L20 3.5V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="17.5" cy="16" r="2.6"/></svg>音乐保留</button>
-    <button id="rlive" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2.7"/><path d="M6.3 6.3a8.1 8.1 0 0 0 0 11.4M17.7 6.3a8.1 8.1 0 0 1 0 11.4"/></svg>保留直播</button>
+    <button id="rlive" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2.7"/><path d="M6.3 6.3a8.1 8.1 0 0 0 0 11.4M17.7 6.3a8.1 8.1 0 0 1 0 11.4"/></svg>保留直播</button>
   </div>
   <div class="nm">
-    <div><div class="v cg" id="nk">0</div><div class="l">保留</div></div>
-    <div><div class="v cr" id="ns">0</div><div class="l">跳过</div></div>
-    <div><div class="v cb" id="nl">0</div><div class="l">直播</div></div>
-    <div><div class="v cp" id="nf">0</div><div class="l">女生</div></div>
+    <div style="--dc:var(--c-ok)"><div class="v cg" id="nk">0</div><div class="l">保留</div></div>
+    <div style="--dc:var(--c-bad)"><div class="v cr" id="ns">0</div><div class="l">跳过</div></div>
+    <div style="--dc:var(--c-info)"><div class="v cb" id="nl">0</div><div class="l">直播</div></div>
+    <div style="--dc:var(--c-pink)"><div class="v cp" id="nf">0</div><div class="l">女生</div></div>
   </div>
   <div class="time"><span id="tNow"></span><span id="tSave"></span></div>
   <div class="ft">
@@ -1196,7 +1292,7 @@
       <i data-c="255,149,0" data-hex="#FF9500" style="background:#FF9500"></i>
       <i data-c="34,222,226" data-hex="#22DEE2" style="background:#22DEE2"></i>
     </div>
-    <div class="ver">v17.2</div>
+    <div class="ver">v18.3</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
@@ -1330,6 +1426,166 @@
   // v16.7 [5]：拖完滑杆即 blur 交还焦点——否则焦点滞留在 range 上，W/S/↑↓ 会被 onKey 的 INPUT 守卫拦截，
   // 用户体感"快捷键失灵"；键盘调档（Tab 聚焦+方向键）无 pointerup，不受影响
   $.sl.addEventListener('pointerup', () => { try { $.sl.blur(); } catch(e){} });
+
+  // ══════════ v18.2 UI 动效模块（迁移自 v18 定稿预览，仅 UI 层，零引擎逻辑）══════════
+  // 模块①：合成音效引擎 —— Web Audio 懒创建（首次手势 _ac() 内 resume），零外部文件；
+  //         静音态持久化 localStorage(dyhlf_snd)，初始化时恢复并同步 .off 类与 aria-pressed
+  let _AC = null, _muted = false;
+  try { _muted = localStorage.getItem('dyhlf_snd') === '0'; } catch (e) {}
+  function _ac() {
+    if (!_AC) { try { _AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (_AC && _AC.state === 'suspended') _AC.resume();
+    return _AC;
+  }
+  function _tone(o) {
+    const c = _ac(); if (!c || _muted) return;
+    const { f = 440, f2 = null, t = .12, type = 'sine', g = .1, delay = 0 } = o;
+    const osc = c.createOscillator(), gn = c.createGain(), t0 = c.currentTime + delay;
+    osc.type = type; osc.frequency.setValueAtTime(f, t0);
+    if (f2) osc.frequency.exponentialRampToValueAtTime(Math.max(f2, 1), t0 + t);
+    gn.gain.setValueAtTime(g, t0); gn.gain.exponentialRampToValueAtTime(.0001, t0 + t);
+    osc.connect(gn).connect(c.destination); osc.start(t0); osc.stop(t0 + t + .02);
+  }
+  function _noiseHit(o) {
+    const c = _ac(); if (!c || _muted) return;
+    const { t = .08, g = .1, f = 1800, q = 1, delay = 0 } = o;
+    const buf = c.createBuffer(1, Math.max(1, c.sampleRate * t | 0), c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const n = c.createBufferSource(); n.buffer = buf;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+    const gn = c.createGain(), t0 = c.currentTime + delay;
+    gn.gain.setValueAtTime(g, t0); gn.gain.exponentialRampToValueAtTime(.0001, t0 + t);
+    n.connect(bp).connect(gn).connect(c.destination); n.start(t0); n.stop(t0 + t);
+  }
+  const SFX = {
+    tick: v => _tone({ f: 560 + v * 70, t: .05, type: 'triangle', g: .07 }),                    // 过档：音高随档位上行
+    hit: () => { _tone({ f: 170, f2: 55, t: .16, g: .22 }); _noiseHit({ t: .09, g: .1, f: 2400, q: .8 }); _tone({ f: 1240, t: .22, type: 'triangle', g: .05, delay: .02 }); }, // 撞击：闷响+沙粒+高频闪音
+    pop: () => { const k = .9 + Math.random() * .25; _tone({ f: 520 * k, f2: 150 * k, t: .09, g: .16 }); _noiseHit({ t: .03, g: .05, f: 3000, q: 2 }); }, // 解压卡：随机音高气泡 pop
+    note: (f, oct) => _tone({ f: f * (oct ? 2 : 1), t: .16, g: .05 }),                          // 主题：五声音阶
+  };
+  const _sndBtn = document.getElementById('snd');
+  if (_sndBtn) {
+    const _syncSndBtn = () => {
+      _sndBtn.classList.toggle('off', _muted);
+      _sndBtn.setAttribute('aria-pressed', String(!_muted));
+    };
+    _syncSndBtn(); // 初始化：恢复持久化的静音态
+    _sndBtn.addEventListener('click', () => {
+      _muted = !_muted;
+      _syncSndBtn();
+      try { localStorage.setItem('dyhlf_snd', _muted ? '0' : '1'); } catch (e) {}
+      if (!_muted) SFX.tick(6);
+    });
+  }
+  // 模块②：粒子层 —— #dy-fx 宿主挂 body、z-index 低于面板；spawnParts 上限 70 防长按堆爆；
+  //          stop() 与启动自清理均会 remove 宿主
+  const _fxHost = document.createElement('div');
+  _fxHost.id = 'dy-fx';
+  document.body.appendChild(_fxHost);
+  function _spawnParts(n, x, y, spread, rgb) {
+    if (_fxHost.childElementCount > 70) return;
+    for (let i = 0; i < n; i++) {
+      const p = document.createElement('i'), sz = 2 + Math.random() * 3.5;
+      const c = Math.random() < .28 ? '255,255,255' : (rgb || '255,59,92');
+      p.style.cssText = `left:${x + Math.random() * spread - spread / 2}px;top:${y}px;width:${sz}px;height:${sz}px;background:rgb(${c});box-shadow:0 0 ${sz * 2}px rgba(${c},.8)`;
+      const dx = (Math.random() - .5) * 26, dy = 36 + Math.random() * 66, dur = .65 + Math.random() * .5;
+      p.animate([
+        { transform: 'translate(0,0) scale(1)', opacity: .95 },
+        { transform: `translate(${dx * .4}px,${dy * .35}px) scale(1)`, opacity: .85, offset: .35 },
+        { transform: `translate(${dx}px,${dy}px) scale(.4)`, opacity: 0 }
+      ], { duration: dur * 1000, easing: 'cubic-bezier(.3,.4,.6,1)' }).onfinish = () => p.remove();
+      _fxHost.appendChild(p);
+    }
+  }
+  // 模块③：解压状态卡 —— pointerdown 果冻挤压（先 cancel 旧的再播）+ .rp 涟漪 + pop 音；
+  //          纯解压交互，不绑任何引擎行为
+  const _stCard = panel.querySelector('.st');
+  let _jellyAni = null;
+  if (_stCard) {
+    _stCard.addEventListener('pointerdown', e => {
+      _jellyAni && _jellyAni.cancel();
+      _jellyAni = _stCard.animate([
+        { transform: 'scale(1,1)', easing: 'ease-out' },
+        { transform: 'scale(.93,1.07) translateY(-1px)', offset: .18, easing: 'ease-out' },
+        { transform: 'scale(1.06,.93) translateY(1px)', offset: .42, easing: 'ease-out' },
+        { transform: 'scale(.98,1.02)', offset: .65, easing: 'ease-out' },
+        { transform: 'scale(1.01,.995)', offset: .84 },
+        { transform: 'scale(1,1)' }
+      ], { duration: 460 });
+      const r = _stCard.getBoundingClientRect(), sz = 90;
+      const rp = document.createElement('span'); rp.className = 'rp';
+      rp.style.left = ((e.clientX || r.left + r.width / 2) - r.left) + 'px';
+      rp.style.top = ((e.clientY || r.top + r.height / 2) - r.top) + 'px';
+      rp.style.width = rp.style.height = sz + 'px';
+      _stCard.appendChild(rp); setTimeout(() => rp.remove(), 580);
+      SFX.pop();
+    });
+  }
+  // 模块④：滑块撞击与微反馈接线 —— 追加监听，原 input 处理（applyThreshold/paintSlider/showBub）不动。
+  //          过档：拇指挤压(dyThumbTick)/刻度闪(dyTickF)/值芯片弹跳(dyVlPop) + tick 音；
+  //          到端点：impactFx 震屏（WAAPI 逐段缓动必须写在每个 keyframe 的 easing 属性——
+  //          options.easing 作用于整条时间线，会把震动压缩成瞬间）+ 能量线爆闪 + 粒子迸溅 + hit 音；
+  //          按住尽头不松手：560ms 后接管 96ms 无限微震 + 110ms 粒子雨，松手/离端点全停
+  const _reFx = (el, c) => { el.classList.remove(c); void el.offsetWidth; el.classList.add(c); };
+  const _acRgb = () => ((getComputedStyle(panel).getPropertyValue('--ac-rgb') || '').trim() || '255,59,92');
+  let _lastSl = +$.sl.value;
+  let _slDragging = false;
+  let _rumbleAni = null, _partTimer = null, _rumblePend = null;
+  function _impactFx(dir) {
+    const s = dir === 'r' ? -1 : 1; // 撞右端 → 面板向左回弹（反作用力方向）
+    const rgb = _acRgb();
+    const base = getComputedStyle(panel).boxShadow;
+    panel.animate([
+      { transform: 'translateX(0) rotate(0deg) scale(1)', boxShadow: base, easing: 'cubic-bezier(.3,.9,.4,1)' },
+      { transform: `translateX(${s * 13}px) rotate(${s * .6}deg) scale(1.008)`, boxShadow: base + `,0 0 48px rgba(${rgb},.55)`, offset: .13, easing: 'ease-in-out' },
+      { transform: `translateX(${s * -9}px) rotate(${s * -.38}deg) scale(1)`, boxShadow: base + `,0 0 32px rgba(${rgb},.32)`, offset: .34, easing: 'ease-in-out' },
+      { transform: `translateX(${s * 5.5}px)`, offset: .55, easing: 'ease-in-out' },
+      { transform: `translateX(${s * -2.5}px)`, offset: .75, easing: 'ease-in-out' },
+      { transform: 'translateX(0)' }
+    ], { duration: 500 });
+    // 能量线随撞击爆闪（仅运行态可见，::after 伪元素动画；旧引擎不支持 pseudoElement 时静默降级）
+    try {
+      panel.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(2.4)', offset: .2 }, { filter: 'brightness(1)' }], { duration: 460, easing: 'ease-out', pseudoElement: '::after' });
+    } catch (e) {}
+    const tr = $.sl.getBoundingClientRect();
+    _spawnParts(9, dir === 'r' ? tr.right - 6 : tr.left + 6, tr.top + tr.height / 2, 30, rgb);
+  }
+  function _startRumble() {
+    if (_rumbleAni) return;
+    _rumbleAni = panel.animate([
+      { transform: 'translateX(0)' },
+      { transform: 'translateX(2.6px) rotate(.12deg)' },
+      { transform: 'translateX(-2.6px) rotate(-.12deg)' },
+      { transform: 'translateX(0)' }
+    ], { duration: 96, iterations: Infinity });
+    _partTimer = setInterval(() => {
+      const r = panel.getBoundingClientRect();
+      _spawnParts(2, r.left + 6, r.bottom - 3, r.width - 12, _acRgb());
+    }, 110);
+  }
+  function _stopRumble() {
+    if (_rumbleAni) { try { _rumbleAni.cancel(); } catch (e) {} _rumbleAni = null; }
+    if (_partTimer) { clearInterval(_partTimer); _partTimer = null; }
+    clearTimeout(_rumblePend); _rumblePend = null;
+  }
+  function _scheduleRumble() {
+    clearTimeout(_rumblePend);
+    _rumblePend = setTimeout(() => { if (_slDragging && (+$.sl.value === 0 || +$.sl.value === 9)) _startRumble(); }, 560); // 等撞击动画演完再接管
+  }
+  $.sl.addEventListener('pointerdown', () => { _slDragging = true; if (+$.sl.value === 0 || +$.sl.value === 9) _scheduleRumble(); });
+  ['pointerup', 'pointercancel'].forEach(ev => $.sl.addEventListener(ev, () => { _slDragging = false; _stopRumble(); }));
+  $.sl.addEventListener('input', () => {
+    const v = +$.sl.value, atEdge = (v === 0 || v === 9), wasEdge = (_lastSl === 0 || _lastSl === 9);
+    if (v !== _lastSl) { _reFx($.sl, 'tk'); _reFx(_slwrap, 'tk'); _reFx($.slv, 'pop'); SFX.tick(v); }
+    if (atEdge && !wasEdge) { _impactFx(v === 9 ? 'r' : 'l'); _reFx($.sl, 'imp'); SFX.hit(); }
+    if (atEdge && _slDragging) _scheduleRumble(); // 撞到尽头且没松手 → 先撞后嗡
+    if (!atEdge) _stopRumble();
+    _lastSl = v;
+  });
+  $.sl.addEventListener('animationend', () => { $.sl.classList.remove('tk', 'imp'); });
+  _slwrap.addEventListener('animationend', () => { _slwrap.classList.remove('tk'); });
+  $.slv.addEventListener('animationend', () => { $.slv.classList.remove('pop'); });
+  // ══════════ v18.2 UI 动效模块结束 ══════════
 
   function saveFabPos() {
     try {
@@ -1618,6 +1874,18 @@
   try { _savedTheme = localStorage.getItem('dyhlf_theme'); } catch(e) {}
   _applyTheme(_savedTheme || _THEME_DEFAULT, false); // load 路径：旧值自动迁移 + 脏值防御
   document.querySelectorAll('#tm i').forEach(el => el.onclick = () => _applyTheme(el.dataset.c, true));
+  // v18.2 模块⑤：主题即时预览 —— 悬停立即应用主题色 + 五声音阶（随色阶走），移出还原到已保存主题；
+  //                原点击保存逻辑（上方 onclick → persist=true）保持不变
+  const _THEME_NOTES = [523.25, 587.33, 659.25, 783.99, 880, 1046.5]; // C D E G A C'
+  let _committedTheme = _savedTheme || _THEME_DEFAULT; // _applyTheme 内做迁移+脏值防御，还原时同样归一
+  const _tmBox = document.getElementById('tm');
+  if (_tmBox) {
+    _tmBox.querySelectorAll('i').forEach((el, i) => {
+      el.addEventListener('pointerenter', () => { _applyTheme(el.dataset.c, false); SFX.note(_THEME_NOTES[i % 6]); });
+      el.addEventListener('click', () => { _committedTheme = el.dataset.c; SFX.note(_THEME_NOTES[i % 6], 1); });
+    });
+    _tmBox.addEventListener('pointerleave', () => _applyTheme(_committedTheme, false));
+  }
 
   (()=>{
     const rs=document.getElementById('dy-rs');let d=false;
@@ -1775,6 +2043,8 @@
       clearTimeout(_ppT);
       try { localStorage.setItem('dyhlf_pp', JSON.stringify({l:panel.style.left,t:panel.style.top})); } catch(e){}
       clearTimeout(_closeT); // v17.2：面板关闭淡出定时器
+      _stopRumble(); // v18.2：滑块按住尽头微震动画+粒子雨定时器
+      try { _fxHost.remove(); } catch (e) {} // v18.2：粒子宿主随 stop 移除，无残留
       invalidate();
       // v14.2：统一清理所有 document/window 级监听（缩放/点外关闭/resize 等）
       // v16.0：同清单含 ResizeObserver 断开与 countUp 代际 token 失效
