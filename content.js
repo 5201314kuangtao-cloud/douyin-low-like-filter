@@ -1,6 +1,66 @@
 (function __dyhlfBoot() {
   'use strict';
-  // dyhlf v18.3 · 红线加固版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  // dyhlf v19.7 · 芯片去波纹版（本行是热重启版本指纹，改动需与 VERSION 同步）
+  //   v19.7（用户实测反馈）：四策略芯片（颜值保留/自动清屏/音乐保留/保留直播）退出点击波纹
+  //   覆盖——它们已有果冻挤压+粒子+音效，不再叠波纹；其余按钮波纹不变
+  //   v19.6（用户实测反馈）：①拉满端特效改海浪——光带像海浪一样从左往右一波接一波推过阈值区，
+  //   按住不松手浪不停（rAF 循环+280ms 一波），松手/离端即停；单次撞击震保留（进场一下）
+  //   ②状态卡（暂停卡）不叠波纹——它自带果冻+涟漪，从波纹覆盖选择器中移除
+  //   v19.5（用户实测反馈）：①流光只扫阈值滑条区域（不再全面板）②拉满恢复单次震动
+  //   （_impactFx 一次 500ms 本就是单发；持续微震仍只在最小端）③全按钮波纹与调色盘
+  //   完全同款：14px 圆环从点击处 scale(.4)→scale(9) 淡出，480ms 同缓动
+  //   v19.4（用户实测反馈）：①修"从100万往上拉一直有bug"——尽头撞击方向还写死旧档位 9，
+  //   11 档后拉满时震动方向全错，已改随档位动态判断 ②拉满（500万）不再震动，改为流光特效：
+  //   一道强光从面板左侧扫到右侧（改用 _lightSweep）③音量上限 100%→200%（声音可翻倍）
+  //   ④主题点波纹特效推广到全部按钮：运行开关/四策略芯片/菜单项/引导按钮/FAB/统计格/音量图标
+  //   点击时都从点击处荡开一圈色波纹（本地坐标按面板 zoom 换算）
+  //   v19.3（用户实测反馈）：①撞尽头不再喷粒子（面板缩放后视口坐标换算不准，位置对不上；
+  //   保留震动+闪光+音效+彩带雨）②主题点波纹坐标按面板 zoom 换算修正（缩放≠1 时波纹错位）
+  //   v19.2（用户拍板）：①阈值滑条整体回退到弹力球之前的样子——原生滑条正常拖（白球/弹弓/
+  //   台球物理整链移除），保留 500万 档（11档）与尽头撞击+微震（接线本就在，恢复指针事件即活）
+  //   ②音效降密度：_tone 全局 60ms 节流 + 滑条过档音 130ms 节流，连拖不再突突突；其余音效不变
+  //   v19.1（用户实测反馈逐项）：①点轨道中段任意档位=球马上归位到所点档位；只有按在轨道
+  //   两端才进入牵线弹弓 ②弹弓线画在全局 canvas 上——可伸出面板外，且从球外缘起线（不在球心，
+  //   修复被球遮住的 bug）③尽头撞击/微震恢复（v19.0 原生滑条退役后旧接线全成死线）④头部音量
+  //   区收成一个小图标：点图标=静音开关，滑条只在调整时展开、2 秒不用自动收起；独立音效开关
+  //   按钮删除（功能并入图标）⑤拖悬浮球不再撒粒子 ⑥鼠标快速移动时自动关闭跟随光效保性能
+  //   v19.0（用户拍板重做）：v18.9 的白球与原生滑条打架，阈值被顶到乱档（实测卡在 500万）。
+  //   重做为「白球即阈值」：白球常驻当前档位；抓住球左右拖=精调；按住轨道空白拉出弹弓线，
+  //   松手把球弹飞（拉得越远弹得越久，撞壁 tap 音+粒子+轻震，恢复 0.72），停下在哪档阈值就是
+  //   哪档（顶部芯片实时跟随）。原生滑条 pointer-events 已禁用（只作数值存储），杜绝值乱跳。
+  //   另：鼠标彩带线条按用户要求移除（只留柔光点）；音量条 tick 改按步进触发（杜绝连发音）。
+  //   v18.9（用户逐项拍板）：①面板边缘旋转流光移除（太突兀），闪光移到 FAB 光晕与鼠标跟随
+  //   ②鼠标跟随光效：柔光点+彩色发光线条拖尾（canvas，主题色，闲置自动休眠）③头部标题
+  //   「别做算法里的困兽」撤下，原位改动效音量滑条（⋯菜单内那份移除，同一 dyhlf_vol）
+  //   ④统计四格点一下 +1（计入对应计数，滚动+浮字，连点解压）⑤阈值上限 100万→500万（11 档）
+  //   ⑥阈值滑条橡皮筋+台球弹力：拉过尽头白球拉伸（38 折超程），松手台球式来回弹（撞壁音+粒子+
+  //   面板轻震，恢复 0.72），弹完停回所在档位；两端都支持 ⑦新增 SFX.tap、数字翻牌沿用
+  //   v18.8（用户要求"屏蔽，不要让它弹出来"）：顶部搜索框的「搜索发现/热搜榜」弹层
+  //   （search-guess-container / search-hot-container）鼠标扫过就会弹、且可能滞留不关。
+  //   屏蔽三件套：①两弹层 display:none ②搜索输入框 pointer-events:none（悬停/点击都不再触发）
+  //   ③focusin 守卫：万一被聚焦（如 Tab 键）立即 blur。副作用：顶部搜索不能用鼠标点了——
+  //   如需恢复，删掉 CSS 里 v18.8 两条规则与 onDoc('focusin') 守卫即可。
+  //   v18.7（用户实测反馈）：修"顶部搜索框自动点亮、联想下拉自动弹出"——根因是 synthKeyTarget
+  //   兜底选择器 [data-e2e] 会抓到页面上第一个 data-e2e 元素 = 顶部导航条（douyin-navigation，
+  //   搜索框在其内），自动跳转的 ArrowDown 打进导航被抖音当作"搜索联想下移"。修复：兜底目标
+  //   只许是 feed 容器（feed-active-video/feed-item/slideList），并把导航/搜索区加入 activeElement
+  //   黑名单——合成按键从此物理上进不了搜索区。新增 data-e2e 白名单时严禁加宽。
+  //   v18.6（用户实测反馈）：①统计格迷你进度弧移除（看着像按钮却没反应，视觉噪音）
+  //   ②统计四格补点击解压反馈（果冻+pop音，可连点，无功能含义）③悬浮球 hover 扫光移除
+  //   ④每个视频判定时从状态卡弹出的星屑粒子与星音移除（每视频弹一次太吵）；能量线闪烁保留
+  //   v18.5（用户逐项拍板）：①状态卡回归纯解压小卡片——v18.4 的"点击=播放暂停"已按用户要求移除，
+  //   此卡严禁绑定任何影响视频的行为 ②撞尽头：面板震动+果冻挤压回弹+拇指位置向上溅粒子+闪光+音效
+  //   全保留 ③四策略芯片：每次按下果冻挤压+小粒子并发+音效（开关功能不变），1秒内连点同芯片≥3次
+  //   触发连击彩蛋 ④GPU 拉满：粒子上限 70→150、爆彩 26→60、撞尽头全屏彩带雨 ⑤流光描边（面板边缘
+  //   conic 流光，@property 角度驱动，不支持时静止）、FAB 光晕呼吸、背景微流光（运行态）⑥统计格迷你
+  //   进度弧+数字翻牌 ⑦能量线随判定闪烁、主题点波纹扩散、音量条与阈值滑条同款手感
+  //   v18.4：①轻透化（玻璃.68→.34/菜单.86→.64/blur24→18/面板FAB菜单阴影减档/状态卡与统计辉光减弱）
+  //   ②音量键（⋯菜单内音量滑条，只控脚本自身音效，持久化 dyhlf_vol）③全按钮音效（开关/芯片/菜单/
+  //   引导/FAB/主题点已有音）④共享噪声buffer（预生成0.25s复用）⑤动效粒子增强：打开级联(7层25ms步进)、
+  //   计数+1浮字、保留绿星/跳过红粒反馈、每50跳里程碑爆彩、FAB拖动拖尾、滑块拖动拖尾
+  //   ⑥新交互：状态卡点击=播放/暂停（不碰键盘）、统计格title解释、主题色粒子全部读 --ac-rgb
+  //   ⑦兜底：prefers-reduced-motion 全关动效粒子；:has 不支持时以 .running 类同步能量线
+  //   （全部为一次性动画/事件驱动，无新增常驻定时器，无需扩充 stop() 清理清单）
   //   v18.3 = v18.2 + 两处真机事故修复 + AI 迭代红线清单。给下一个改这个文件的 AI：
   //   先把下面的红线读完再动刀；你的任务只许是修「明确报出的 bug」。
   //   [Z1] 修复 isLiveFast 函数头 5 行被误删：text/result/stable 未定义即用，strict 模式每次调用
@@ -95,7 +155,7 @@
   //   8) 评论打开时 exitUserBack 不自动 play（滚评论不再误触发播放）
   //   9) 主题全量着色：全部语义色由主题色 HSL 派生（状态卡/计数/FAB 角标随主题换装），
   //      新增 紫/橙/青 主题点共 6 色；女生保留状态条补主题色左缘
-  const VERSION = '18.3';
+  const VERSION = '19.7';
   if (window.__dyhlf?.stop) {
     try { window.__dyhlf.stop(); } catch (e) {}
   }
@@ -179,7 +239,7 @@
   }
 
   // v15.0：阈值十档（1-2-5 对数序列），滑块 index -> 赞数
-  const THRESHOLD_PRESETS = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
+  const THRESHOLD_PRESETS = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 5000000]; // v18.9：上限加 500万
   function presetIndex(v) {
     let best = 0, bd = Infinity;
     for (let i = 0; i < THRESHOLD_PRESETS.length; i++) {
@@ -687,8 +747,11 @@
     const it = activeItem();
     if (it) return it;
     const ae = document.activeElement;
-    if (ae && ae !== document.body && ae !== document.documentElement && document.contains(ae)) return ae;
-    const probe = document.querySelector('[data-e2e]');
+    // v18.7：焦点在顶部导航/搜索区时绝不借用（ArrowDown 会被抖音当搜索联想下移，点亮搜索框弹下拉）
+    if (ae && ae !== document.body && ae !== document.documentElement && document.contains(ae) &&
+        !(ae.closest && ae.closest('[data-e2e="douyin-navigation"],header,[class*="searchbar"],[class*="search-"]'))) return ae;
+    // v18.7：兜底目标白名单——只许 feed 容器，严禁用 [data-e2e] 裸查询（第一个命中=顶部导航条）
+    const probe = document.querySelector('[data-e2e="feed-active-video"],[data-e2e="feed-item"],[data-e2e="slideList"]');
     return probe || document.body;
   }
   function pressJ() {
@@ -1050,13 +1113,62 @@
     }
   }, 100);
   onDoc('wheel', onWheel, {capture:true, passive:true});
+  onDoc('focusin', e => { // v18.8：搜索框被聚焦（Tab/程序）立即失焦，双保险防弹层
+    const t = e.target;
+    if (t && t.closest && t.closest('[data-e2e="searchbar-input"]')) { try { t.blur(); } catch (err) {} }
+  }, true);
+  // ═══ v18.9：鼠标跟随光效（柔光点+彩色发光线条拖尾，canvas GPU 绘制，闲置自动休眠）═══
+  const _mGlow = document.createElement('canvas');
+  _mGlow.id = 'dy-mglow';
+  _mGlow.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483601';
+  document.body.appendChild(_mGlow);
+  const _mg = _mGlow.getContext('2d');
+  let _mgW = 0, _mgH = 0, _mx = -100, _my = -100, _mgOn = false, _mGlowRaf = null, _mLastMove = 0;
+  let _mgPx = -1, _mgPy = -1, _mgPt = 0, _bandLine = null; // v19.1：速度检测 + 弹弓绷线（全局 canvas 绘制，可伸出面板外）
+  function _mgSize() { _mgW = _mGlow.width = innerWidth; _mgH = _mGlow.height = innerHeight; }
+  _mgSize();
+  onWin('resize', _mgSize);
+  function _mgLoop() {
+    if (_stopped) { _mGlowRaf = null; return; }
+    if (performance.now() - _mLastMove > 2500) { // 闲置 2.5s 休眠，省 GPU
+      _mg.clearRect(0, 0, _mgW, _mgH);
+      _mGlowRaf = null; _mgOn = false;
+      return;
+    }
+    _mg.clearRect(0, 0, _mgW, _mgH);
+    // v19.1：弹弓绷线——画在全局 canvas（可伸出面板外），从球外缘起线（不被球遮）
+    if (_bandLine) {
+      const bdx = _bandLine.x2 - _bandLine.x1, bdy = _bandLine.y2 - _bandLine.y1, bl = Math.hypot(bdx, bdy) || 1;
+      const sx = _bandLine.x1 + bdx / bl * 12, sy = _bandLine.y1 + bdy / bl * 12;
+      _mg.lineCap = 'round';
+      _mg.strokeStyle = `rgba(${_acRgb()},.85)`;
+      _mg.lineWidth = 2.5;
+      _mg.beginPath(); _mg.moveTo(sx, sy); _mg.lineTo(_bandLine.x2, _bandLine.y2); _mg.stroke();
+    }
+    // v19.1：快速移动时自动关闭跟随光效保性能（慢下来自动恢复）
+    const nowG = performance.now();
+    const spd = Math.hypot(_mx - _mgPx, _my - _mgPy) / Math.max(8, nowG - _mgPt) * 1000;
+    _mgPx = _mx; _mgPy = _my; _mgPt = nowG;
+    if (spd > 1500 && !_bandLine) { _mGlowRaf = requestAnimationFrame(_mgLoop); return; }
+    const gr = _mg.createRadialGradient(_mx, _my, 0, _mx, _my, 46);
+    gr.addColorStop(0, `rgba(${rgb},.26)`);
+    gr.addColorStop(1, `rgba(${rgb},0)`);
+    _mg.fillStyle = gr;
+    _mg.beginPath(); _mg.arc(_mx, _my, 46, 0, Math.PI * 2); _mg.fill();
+    _mGlowRaf = requestAnimationFrame(_mgLoop);
+  }
+  onWin('mousemove', e => {
+    _mx = e.clientX; _my = e.clientY; _mLastMove = performance.now();
+    if (!_mgOn && !_prm) { _mgOn = true; _mgSize(); if (!_mGlowRaf) _mGlowRaf = requestAnimationFrame(_mgLoop); }
+  }, { passive: true });
+  _disposers.push(() => { if (_mGlowRaf) cancelAnimationFrame(_mGlowRaf); try { _mGlow.remove(); } catch (e) {} });
   onDoc('click', onClick, true);
   _scheduleDrawerScan(); // v16.6 [9]：启动先检一次抽屉（兜底刷新时抽屉已开）
   // v16.1 ①：删除 pause/play 事件监听，改由 tick 轮询真实 video.paused（见 pollPauseState），根除事件竞态
 
   // ============ UI v16.0 ============
   const style = document.createElement('style');
-  style.textContent = `/*dyhlf-v18.3 · 曜石引擎（本行是热重启版本指纹，改动需与 VERSION 同步）
+  style.textContent = `/*dyhlf-v19.7 · 曜石引擎（本行是热重启版本指纹，改动需与 VERSION 同步）
   UI 全换代：深空底色 / 顶部能量线(运行态点亮) / 状态卡能量核心(tint渐变+左能量条+脉冲点)
   / 滑块十档刻度+彩底值芯片 / 策略芯片发光态 / 统计格顶色条 / FAB 主题光环 / blur 入场动效
   契约不变：#dy/#dy-fab 变量块、--ac/--ac-rgb 主题注入、全部元素 ID 与语义类、自清理标记 */
@@ -1065,13 +1177,13 @@
   --ac:#FF3B5C;--ac-rgb:255,59,92;
   --t1:rgba(255,255,255,.96);--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.40);
   /*AI红线3：语义色写死勿跟主题*/--c-ok:#3DE8A0;--c-bad:#FF5C7A;--c-info:#5AB0FF;--c-pink:#FF6FA8;--c-warn:#FFC53D;--c-back:#B389FF;
-  --glass:rgba(10,11,16,.68);--glass-2:rgba(255,255,255,.045);--menu:rgba(16,18,24,.86);
+  --glass:rgba(14,16,22,.34);--glass-2:rgba(255,255,255,.055);--menu:rgba(16,18,24,.64);
   --line:rgba(255,255,255,.12);--line-2:rgba(255,255,255,.08);
   --r-card:14px;--r-ctrl:11px;
   --f: -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
 }
 /* ============ 容器：曜石底 + 能量线 ============ */
-#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(24px) saturate(1.8);-webkit-backdrop-filter:blur(24px) saturate(1.8);border-radius:18px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;max-width:calc(100vw - 8px);user-select:none;box-shadow:0 24px 64px rgba(0,0,0,.48),0 4px 16px rgba(0,0,0,.32),0 0 0 1px rgba(255,255,255,.03);zoom:1;animation:dyIn .28s cubic-bezier(.2,.9,.25,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+#dy{position:fixed;left:20px;top:90px;width:var(--w-p);z-index:2147483647;background:var(--glass);backdrop-filter:blur(18px) saturate(1.8);-webkit-backdrop-filter:blur(18px) saturate(1.8);border-radius:18px;font:13px/1.5 var(--f);color:var(--t1);overflow:hidden;max-width:calc(100vw - 8px);user-select:none;box-shadow:0 14px 40px rgba(0,0,0,.28),0 3px 10px rgba(0,0,0,.16),0 0 0 1px rgba(255,255,255,.05);zoom:1;animation:dyIn .28s cubic-bezier(.2,.9,.25,1);text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 #dy::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 0 0 1px rgba(255,255,255,.03)}
 /* 顶部能量线：运行时点亮并缓慢呼吸 —— 一眼可辨「引擎在跑」 */
 #dy::after{content:'';position:absolute;top:0;left:30px;right:30px;height:2px;border-radius:0 0 3px 3px;background:linear-gradient(90deg,transparent,rgba(var(--ac-rgb),.9) 50%,transparent);box-shadow:0 0 12px 1px rgba(var(--ac-rgb),.45);opacity:0;transition:opacity .45s;pointer-events:none}
@@ -1100,7 +1212,7 @@
 /* ============ A 状态层：状态卡「能量核心」============ */
 #dy .st{--sc:var(--t3);--sc-rgb:255,255,255;
   position:relative;margin:0 16px 14px;padding:12px 14px 11px 18px;border-radius:var(--r-card);overflow:hidden;
-  background:linear-gradient(135deg,rgba(var(--sc-rgb),.13),rgba(var(--sc-rgb),.03) 62%),rgba(255,255,255,.03);
+  background:linear-gradient(135deg,rgba(var(--sc-rgb),.10),rgba(var(--sc-rgb),.02) 62%),rgba(255,255,255,.03);
   border:1px solid rgba(var(--sc-rgb),.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
   transition:background .35s,border-color .35s}
 #dy .st:has(.m.cg){--sc:var(--c-ok);--sc-rgb:61,232,160}
@@ -1109,9 +1221,9 @@
 #dy .st:has(.m.cp){--sc:var(--c-pink);--sc-rgb:255,111,168}
 #dy .st:has(.m.cy){--sc:var(--c-warn);--sc-rgb:255,197,61}
 #dy .st:has(.m.ca){--sc:var(--ac);--sc-rgb:var(--ac-rgb)}
-#dy .st::before{content:'';position:absolute;left:0;top:13%;bottom:13%;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--sc),rgba(var(--sc-rgb),.15));box-shadow:0 0 10px rgba(var(--sc-rgb),.55);transition:background .35s,box-shadow .35s}
+#dy .st::before{content:'';position:absolute;left:0;top:13%;bottom:13%;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--sc),rgba(var(--sc-rgb),.15));box-shadow:0 0 7px rgba(var(--sc-rgb),.38);transition:background .35s,box-shadow .35s}
 #dy .st .m{display:flex;align-items:center;gap:9px;font-size:20px;font-weight:700;letter-spacing:.3px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--t1);animation:dyStIn .16s ease-out;text-shadow:0 1px 2px rgba(0,0,0,.4)}
-#dy .st .m::before{content:'';flex:none;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor;animation:dyPulse 2.1s ease-in-out infinite}
+#dy .st .m::before{content:'';flex:none;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}/* v18.4：脉冲只留运行态（.running 规则见动效区），常驻辉光减弱 */
 #dy .st .s{font-size:11px;color:var(--t2);margin-top:4px;animation:dyStIn .16s ease-out;min-height:1.5em;overflow-wrap:anywhere}
 /* —— v18.2 解压卡片：可连点（果冻挤压 + 点击涟漪），触屏防双击缩放 —— */
 #dy .st{cursor:pointer;touch-action:manipulation}
@@ -1140,16 +1252,16 @@
 #dy .slwrap{position:relative;height:32px;display:flex;align-items:center;cursor:pointer}
 #dy .slwrap::before{content:'';position:absolute;inset:-5px 0;pointer-events:none}/* 命中区扩至 42px 高 */
 #dy .slwrap::after{content:'';position:absolute;left:9px;right:9px;bottom:calc(50% + 5px);height:2.5px;pointer-events:none;
-  background:repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1.5px,transparent 1.5px calc((100% - 1.5px)/9))}
-#dy .sl{-webkit-appearance:none;appearance:none;display:block;width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.13);outline:none;margin:0;cursor:pointer}
-#dy .sl::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.3),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer;transition:transform .12s,box-shadow .12s}
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1.5px,transparent 1.5px calc((100% - 1.5px)/10))}
+#dy .sl{-webkit-appearance:none;appearance:none;display:block;width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.13);outline:none;margin:0;cursor:pointer} /* v19.2：原生滑条恢复 */
+#dy .sl::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.3),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer;transition:transform .12s,box-shadow .12s} /* v19.2：拇指恢复 */
 #dy .sl:hover::-webkit-slider-thumb{transform:scale(1.15)}
 #dy .sl:active::-webkit-slider-thumb{transform:scale(1.3);box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 7px rgba(var(--ac-rgb),.15),0 0 18px rgba(var(--ac-rgb),.5)}
-#dy .sl::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer}
+#dy .sl::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 12px rgba(var(--ac-rgb),.35);cursor:pointer} /* v19.2：拇指恢复 */
 #dy .bub{position:absolute;bottom:calc(100% + 7px);transform:translateX(-50%);background:var(--menu);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(var(--ac-rgb),.42);border-radius:9px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--t1);white-space:nowrap;pointer-events:none;opacity:0;transition:left .1s ease-out,opacity .15s;box-shadow:0 6px 18px rgba(0,0,0,.42),0 0 14px rgba(var(--ac-rgb),.18)}
 #dy .bub::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:var(--menu)}
 #dy .bub.show{opacity:1}
-#dy .sle{display:flex;justify-content:space-between;font-size:10px;color:var(--t3);letter-spacing:.4px}
+#dy .sle{display:flex;justify-content:space-between;font-size:11px;color:var(--t3);letter-spacing:.4px}
 /* —— v18.2 滑块动效：跨档微反馈（拇指挤压/刻度闪/值芯片弹跳）+ 尽头撞击（拇指弹性爆闪）—— */
 @keyframes dyThumbTick{0%{transform:scale(1.3)}45%{transform:scale(1.34,.72)}100%{transform:scale(1.3)}}
 #dy .sl.tk::-webkit-slider-thumb{animation:dyThumbTick .13s cubic-bezier(.3,.7,.4,1)}
@@ -1173,7 +1285,7 @@
 #dy .nm>div{position:relative;overflow:hidden;background:var(--glass-2);border:1px solid var(--line-2);border-radius:12px;padding:10px 2px 8px;text-align:center;--dc:var(--t3);transition:background .15s}
 #dy .nm>div:hover{background:rgba(255,255,255,.07)}
 #dy .nm>div::before{content:'';position:absolute;top:0;left:22%;right:22%;height:1.5px;border-radius:2px;background:var(--dc);opacity:.7;box-shadow:0 0 8px var(--dc)}
-#dy .nm .v{font-size:15px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;text-shadow:0 0 12px currentColor}
+#dy .nm .v{font-size:15px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;text-shadow:0 0 6px currentColor}
 #dy .nm .l{font-size:10px;color:var(--t3);margin-top:4px;font-weight:600;letter-spacing:1.5px}
 #dy .cg{color:var(--c-ok)}
 #dy .cr{color:var(--c-bad)}
@@ -1183,7 +1295,7 @@
 #dy .time{display:flex;flex-direction:column;gap:4px;padding:0 16px 14px;font-size:11px;letter-spacing:.2px;overflow-wrap:anywhere}
 #dy #tNow{color:var(--t2)}
 #dy #tSave{color:var(--t3)}
-#dy .time .hi{color:var(--ac);font-weight:700;text-shadow:0 0 14px rgba(var(--ac-rgb),.5)}
+#dy .time .hi{color:var(--ac);font-weight:700;text-shadow:0 0 8px rgba(var(--ac-rgb),.3)}
 /* ============ D 底部：更多菜单 + 主题点 + 版本 ============ */
 #dy .ft{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 16px 13px;border-top:1px solid var(--line-2);background:linear-gradient(180deg,rgba(255,255,255,.018),transparent 70%)}
 #dy .more{position:relative;justify-self:start}
@@ -1191,7 +1303,7 @@
 #dy .mbtn::after{content:'';position:absolute;inset:-6px;border-radius:14px}/* 命中区 42px */
 #dy .mbtn:hover{color:var(--t1);background:rgba(255,255,255,.09)}
 #dy .mbtn:active{transform:scale(.92)}
-#dy .menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:138px;background:var(--menu);backdrop-filter:blur(16px) saturate(2.0);-webkit-backdrop-filter:blur(16px) saturate(2.0);border:1px solid var(--line);border-radius:13px;padding:5px;box-shadow:0 14px 40px rgba(0,0,0,.5),0 3px 10px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.04);animation:dyMenuIn .16s cubic-bezier(.2,.9,.3,1)}
+#dy .menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:138px;background:var(--menu);backdrop-filter:blur(16px) saturate(2.0);-webkit-backdrop-filter:blur(16px) saturate(2.0);border:1px solid var(--line);border-radius:13px;padding:5px;box-shadow:0 10px 30px rgba(0,0,0,.30),0 3px 10px rgba(0,0,0,.16),0 0 0 1px rgba(255,255,255,.05);animation:dyMenuIn .16s cubic-bezier(.2,.9,.3,1)}
 #dy .menu .mi{font-size:12px;padding:9px 12px;border-radius:9px;color:var(--t1);cursor:pointer;white-space:nowrap;transition:background .12s,transform .1s}
 #dy .menu .mi:hover{background:rgba(255,255,255,.09)}
 #dy .menu .mi.danger{color:var(--c-bad)}
@@ -1204,7 +1316,7 @@
 #dy .tm i::after{content:'';position:absolute;inset:-9px;border-radius:50%}/* 命中区 29px */
 #dy .tm i:hover{transform:scale(1.35)}
 #dy .tm i.on{box-shadow:0 0 0 2px rgba(10,11,16,.9),0 0 0 3.5px rgba(255,255,255,.85),0 0 12px 1px rgba(255,255,255,.35);transform:scale(1.12)}
-#dy .ver{font-size:11px;color:rgba(255,255,255,.5);justify-self:end;cursor:default;transition:color .15s}
+#dy .ver{font-size:11px;color:var(--t3);justify-self:end;cursor:default;transition:color .15s}
 #dy .ver:hover{color:var(--t2)}
 /* ============ 缩放手柄 ============ */
 #dy .rs{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:5;background:none;border:0;opacity:.35;transition:opacity .2s}
@@ -1213,11 +1325,11 @@
 #dy:hover .rs{opacity:.7}
 #dy .rs:hover{opacity:1}
 /* ============ FAB：曜石底 + 主题光环 ============ */
-#dy-fab{position:fixed;left:20px;top:36px;width:44px;height:44px;border-radius:15px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.03) 55%,rgba(255,255,255,0)),var(--glass);backdrop-filter:blur(20px) saturate(1.7);-webkit-backdrop-filter:blur(20px) saturate(1.7);border:1px solid rgba(var(--ac-rgb),.42);box-shadow:0 8px 22px rgba(0,0,0,.42),0 2px 6px rgba(0,0,0,.3),0 0 18px rgba(var(--ac-rgb),.2);transition:transform .2s cubic-bezier(.34,1.56,.64,1),border-color .2s,box-shadow .2s;touch-action:none;padding:0}
+#dy-fab{position:fixed;left:20px;top:36px;width:44px;height:44px;border-radius:15px;z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.03) 55%,rgba(255,255,255,0)),var(--glass);backdrop-filter:blur(16px) saturate(1.7);-webkit-backdrop-filter:blur(16px) saturate(1.7);border:1px solid rgba(var(--ac-rgb),.42);box-shadow:0 8px 22px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.14),0 0 14px rgba(var(--ac-rgb),.15);transition:transform .2s cubic-bezier(.34,1.56,.64,1),border-color .2s,box-shadow .2s;touch-action:none;padding:0}
 #dy-fab::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.04)}
-#dy-fab:hover{transform:scale(1.08) translateY(-1px);border-color:rgba(var(--ac-rgb),.68);box-shadow:0 10px 26px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.3),0 0 28px rgba(var(--ac-rgb),.35)}
+#dy-fab:hover{transform:scale(1.08) translateY(-1px);border-color:rgba(var(--ac-rgb),.68);box-shadow:0 10px 26px rgba(0,0,0,.28),0 2px 6px rgba(0,0,0,.15),0 0 20px rgba(var(--ac-rgb),.25)}
 #dy-fab:active{transform:scale(.93)}
-#dy-fab svg{width:20px;height:20px;color:var(--ac);filter:drop-shadow(0 0 7px rgba(var(--ac-rgb),.55))}
+#dy-fab svg{width:20px;height:20px;color:var(--ac);filter:drop-shadow(0 0 5px rgba(var(--ac-rgb),.35))}
 /* ============ 焦点可见性（键盘用户）============ */
 #dy :focus-visible,#dy-fab:focus-visible{outline:2px solid rgba(255,255,255,.55);outline-offset:2px}
 #dy .sl:focus-visible{outline-offset:7px}
@@ -1230,6 +1342,62 @@
 @keyframes dyStIn{from{opacity:0;transform:translateX(6px);filter:blur(3px)}to{opacity:1;transform:none;filter:blur(0)}}
 @keyframes dyMenuIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
 #dy.closing{animation:dyOut .12s ease-in both;pointer-events:none}
+/* —— v18.4 运行态兜底（:has 不支持时以 .running 类同步，JS 在 sync() 里维护）—— */
+#dy.running::after{opacity:1;animation:dyEnergy 5.2s ease-in-out infinite}
+#dy.running .hd .t::before{background:var(--ac);box-shadow:0 0 9px rgba(var(--ac-rgb),.85);animation:dyBreath 2.4s ease-in-out infinite}
+#dy.running .st .m::before{animation:dyPulse 2.4s ease-in-out infinite}
+/* —— v18.4 打开级联：7 层 25ms 步进，.casc 每次打开重播 —— */
+#dy.casc .hd{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 20ms both}
+#dy.casc .st{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 45ms both}
+#dy.casc .guide{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 45ms both}
+#dy.casc .slw{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 70ms both}
+#dy.casc .rg{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 95ms both}
+#dy.casc .nm{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 120ms both}
+#dy.casc .time{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 145ms both}
+#dy.casc .ft{animation:dyCsc .22s cubic-bezier(.2,.9,.25,1) 170ms both}
+@keyframes dyCsc{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+/* —— v18.4 计数浮字 —— */
+#dy .nm .fl{position:absolute;left:50%;top:2px;transform:translateX(-50%);font-size:10px;font-weight:700;font-style:normal;color:var(--ac);text-shadow:0 1px 3px rgba(0,0,0,.5);pointer-events:none;animation:dyFl .65s ease-out forwards}
+@keyframes dyFl{from{opacity:0;transform:translate(-50%,6px)}25%{opacity:1}to{opacity:0;transform:translate(-50%,-14px)}}
+/* —— v18.4 音量滑条（⋯菜单内）—— */
+#dy .volrow{display:flex;align-items:center;gap:8px;padding:7px 10px 8px;color:var(--t2)}
+#dy .volrow svg{width:14px;height:14px;flex:none}
+#dy .volrow input{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.16);outline:none;cursor:pointer;margin:0}
+#dy .volrow input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.45);cursor:pointer}
+#dy .volrow input::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 5px rgba(0,0,0,.45)}
+/* —— v19.4：拉满流光条 —— */
+#dy .dysweep{position:absolute;top:0;bottom:0;left:0;width:64px;background:linear-gradient(90deg,transparent,rgba(var(--ac-rgb),.55) 35%,rgba(255,255,255,.85) 50%,rgba(var(--ac-rgb),.55) 65%,transparent);filter:blur(1.5px);pointer-events:none;z-index:5}
+/* —— v19.4：波纹挂载点需要相对定位 —— */
+#dy .menu .mi{position:relative}
+#dy .guide .gok{position:relative}
+#dy .volrow svg{position:relative}
+/* —— v18.5 GPU 特效组（用户授权吃显卡）—— */
+/* v18.9：面板边缘旋转流光已按用户要求移除（太突兀）；闪光改到 FAB 光晕与鼠标跟随光效 */
+#dy-fab.running{animation:dyFabGlow 2.4s ease-in-out infinite}
+@keyframes dyFabGlow{0%,100%{box-shadow:0 8px 22px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.14),0 0 14px rgba(var(--ac-rgb),.15)}50%{box-shadow:0 8px 22px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.14),0 0 30px rgba(var(--ac-rgb),.42)}}
+/* v18.6：悬浮球 hover 扫光已按用户要求移除 */
+#dy.running{background:linear-gradient(160deg,rgba(var(--ac-rgb),.055),transparent 30%,rgba(var(--ac-rgb),.035) 65%,transparent 85%),var(--glass);background-size:220% 220%;animation:dyBgFlow 30s ease-in-out infinite}
+@keyframes dyBgFlow{0%{background-position:0% 0%}50%{background-position:100% 100%}100%{background-position:0% 0%}}
+/* v18.6：统计格迷你进度弧已按用户要求移除（像按钮却没反应，视觉噪音） */
+#dy .nm .v.flip{animation:dyFlip .3s cubic-bezier(.2,.8,.3,1)}
+@keyframes dyFlip{0%{transform:rotateX(80deg);opacity:.15}100%{transform:rotateX(0);opacity:1}}
+#dy .volrow input.tk::-webkit-slider-thumb{animation:dyThumbTick .13s cubic-bezier(.3,.7,.4,1)}
+/* —— v18.9：台球白球 + 头部音量条 —— */
+/* v19.2：白球/弹弓线已按用户要求整体移除（滑条回归原生） */
+#dy .hd .volrow{flex:1;padding:0;min-width:0}
+#dy .hd .volrow input{height:4px;flex:0 1 0px;width:0;opacity:0;padding:0;transition:flex-basis .25s ease,opacity .25s ease}
+#dy .hd .volrow.open input{flex:0 0 76px;width:76px;opacity:1}
+#dy .volrow svg{cursor:pointer}
+#dy .volrow svg .mu{display:none}
+#dy .volrow.muted svg .wv{display:none}
+#dy .volrow.muted svg .mu{display:block}
+/* —— v18.8 屏蔽顶部搜索联想弹层（用户要求；恢复方法见文件头 v18.8 说明）—— */
+[data-e2e="search-guess-container"],[data-e2e="search-hot-container"]{display:none!important}
+[data-e2e="searchbar-input"]{pointer-events:none!important}
+/* —— v18.4 系统减弱动效：动画/过渡全关（粒子/浮字由 JS _prm 双保险）—— */
+@media (prefers-reduced-motion:reduce){
+  #dy,#dy *,#dy::before,#dy::after,#dy *::before,#dy *::after,#dy-fab,#dy-fab::before{animation:none!important;transition:none!important}
+}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   #dy,#dy-fab{background:rgba(10,11,16,.9)}
   #dy .menu{background:rgba(16,18,24,.94)}
@@ -1238,11 +1406,14 @@
   document.head.appendChild(style);
   const panel = document.createElement('div');
   panel.id = 'dy';
+  panel.classList.add('casc'); // v18.4：打开级联入场
   panel.innerHTML = `
 <div class="hd" id="dd">
-    <span class="t" title="快捷键：W/上滚 回看 · S/下滚 继续 · 空格=暂停/恢复（暂停时自动刷也停）&#10;点击标题或版本号可重启脚本">别做算法里的困兽</span>
+    <div class="volrow hdvol" id="dy-volwrap" title="动效音量（点图标=静音/恢复）">
+      <svg id="dy-volicon" viewBox="0 0 24 24" role="button" aria-hidden="true"><path d="M4 9.5v5h3.6l4.9 3.9V5.6L7.6 9.5H4z" fill="currentColor"/><path class="wv" d="M15.8 9a4.4 4.4 0 010 6M18.4 6.6a8 8 0 010 10.8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path class="mu" d="M15 9.5l6 5M21 9.5l-6 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+      <input type="range" id="dy-vol" min="0" max="200" step="1" value="70" aria-label="动效音量（最高200%）">
+    </div>
     <div class="hact">
-    <button class="snd" id="snd" title="音效开关" aria-pressed="true" aria-label="音效开关"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.6l4.9 3.9V5.6L7.6 9.5H4z" fill="currentColor"/><path class="wv" d="M15.8 9a4.4 4.4 0 010 6M18.4 6.6a8 8 0 010 10.8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path class="mu" d="M15 9.5l6 5M21 9.5l-6 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></button>
     <div class="sw on" id="run" role="switch" aria-checked="true" title="开始/停止"></div>
     </div>
 </div>
@@ -1258,10 +1429,10 @@
   <div class="slw">
     <div class="slh"><span class="lb">赞数阈值</span><span class="vl" id="slv">≥2万</span></div>
     <div class="slwrap">
-      <input type="range" class="sl" id="sl" min="0" max="9" step="1" aria-label="赞数阈值">
+      <input type="range" class="sl" id="sl" min="0" max="10" step="1" aria-label="赞数阈值">
       <div class="bub" id="sl-bub" hidden>≥2万</div>
     </div>
-    <div class="sle"><span>1千</span><span>100万</span></div>
+    <div class="sle"><span>1千</span><span>500万</span></div>
   </div>
   <div class="rg">
     <button id="rfem" aria-pressed="true"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21l-1.5-1.35C5.4 15.1 2 12.2 2 8.35 2 5.4 4.4 3 7.35 3c1.7 0 3.35.8 4.65 2.15C13.3 3.8 14.95 3 16.65 3 19.6 3 22 5.4 22 8.35c0 3.85-3.4 6.75-8.5 11.3L12 21z"/></svg>颜值保留</button>
@@ -1282,6 +1453,7 @@
       <div class="menu" id="dy-menu" hidden>
         <div class="mi" id="dy-restart">重启脚本</div>
         <div class="mi danger" id="dy-cls" title="将删除全部配置与时间账本，不可恢复">清除程序</div>
+        <!-- v18.9：菜单内音量滑条已上移到头部，此处移除 -->
       </div>
     </div>
     <div class="tm" id="tm">
@@ -1292,7 +1464,7 @@
       <i data-c="255,149,0" data-hex="#FF9500" style="background:#FF9500"></i>
       <i data-c="34,222,226" data-hex="#22DEE2" style="background:#22DEE2"></i>
     </div>
-    <div class="ver">v18.3</div>
+    <div class="ver" title="点击重启脚本">v19.7</div>
   </div>
 </div>
 <div class="rs" id="dy-rs" title="拖动缩放"></div>`;
@@ -1430,38 +1602,54 @@
   // ══════════ v18.2 UI 动效模块（迁移自 v18 定稿预览，仅 UI 层，零引擎逻辑）══════════
   // 模块①：合成音效引擎 —— Web Audio 懒创建（首次手势 _ac() 内 resume），零外部文件；
   //         静音态持久化 localStorage(dyhlf_snd)，初始化时恢复并同步 .off 类与 aria-pressed
-  let _AC = null, _muted = false;
+  let _AC = null, _muted = false, _noiseBuf = null;
+  const _prm = (typeof matchMedia === 'function') && matchMedia('(prefers-reduced-motion: reduce)').matches; // v18.4：系统减弱动效 → 粒子/浮字全关
+  let _vol = .7; // v18.4：音效总音量（0~1），持久化 dyhlf_vol
+  try { const _sv = parseFloat(localStorage.getItem('dyhlf_vol')); if (isFinite(_sv) && _sv >= 0 && _sv <= 200) _vol = _sv / 100; } catch (e) {} // v19.4：上限 200%
   try { _muted = localStorage.getItem('dyhlf_snd') === '0'; } catch (e) {}
   function _ac() {
     if (!_AC) { try { _AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
     if (_AC && _AC.state === 'suspended') _AC.resume();
     return _AC;
   }
+  let _lastSfxAt = 0; // v19.2：全局音效节流
   function _tone(o) {
     const c = _ac(); if (!c || _muted) return;
+    const _ns = performance.now();
+    if (_ns - _lastSfxAt < 60) return; // v19.2：60ms 内的重复音效直接丢弃（用户反馈太密集）
+    _lastSfxAt = _ns;
     const { f = 440, f2 = null, t = .12, type = 'sine', g = .1, delay = 0 } = o;
     const osc = c.createOscillator(), gn = c.createGain(), t0 = c.currentTime + delay;
     osc.type = type; osc.frequency.setValueAtTime(f, t0);
     if (f2) osc.frequency.exponentialRampToValueAtTime(Math.max(f2, 1), t0 + t);
-    gn.gain.setValueAtTime(g, t0); gn.gain.exponentialRampToValueAtTime(.0001, t0 + t);
+    gn.gain.setValueAtTime(g * _vol, t0); gn.gain.exponentialRampToValueAtTime(.0001, t0 + t);
     osc.connect(gn).connect(c.destination); osc.start(t0); osc.stop(t0 + t + .02);
   }
   function _noiseHit(o) {
     const c = _ac(); if (!c || _muted) return;
     const { t = .08, g = .1, f = 1800, q = 1, delay = 0 } = o;
-    const buf = c.createBuffer(1, Math.max(1, c.sampleRate * t | 0), c.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const n = c.createBufferSource(); n.buffer = buf;
+    // v18.4：共享噪声 buffer（预生成 0.25s，start(offset,duration) 截段复用，省每次分配）
+    if (!_noiseBuf) { _noiseBuf = c.createBuffer(1, Math.max(1, c.sampleRate * .25 | 0), c.sampleRate); const _d = _noiseBuf.getChannelData(0); for (let i = 0; i < _d.length; i++) _d[i] = Math.random() * 2 - 1; }
+    const n = c.createBufferSource(); n.buffer = _noiseBuf;
     const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
     const gn = c.createGain(), t0 = c.currentTime + delay;
     gn.gain.setValueAtTime(g, t0); gn.gain.exponentialRampToValueAtTime(.0001, t0 + t);
-    n.connect(bp).connect(gn).connect(c.destination); n.start(t0); n.stop(t0 + t);
+    gn.gain.setValueAtTime(g * _vol, t0);
+    n.connect(bp).connect(gn).connect(c.destination); n.start(t0, 0, Math.min(t, .25));
   }
   const SFX = {
     tick: v => _tone({ f: 560 + v * 70, t: .05, type: 'triangle', g: .07 }),                    // 过档：音高随档位上行
     hit: () => { _tone({ f: 170, f2: 55, t: .16, g: .22 }); _noiseHit({ t: .09, g: .1, f: 2400, q: .8 }); _tone({ f: 1240, t: .22, type: 'triangle', g: .05, delay: .02 }); }, // 撞击：闷响+沙粒+高频闪音
     pop: () => { const k = .9 + Math.random() * .25; _tone({ f: 520 * k, f2: 150 * k, t: .09, g: .16 }); _noiseHit({ t: .03, g: .05, f: 3000, q: 2 }); }, // 解压卡：随机音高气泡 pop
     note: (f, oct) => _tone({ f: f * (oct ? 2 : 1), t: .16, g: .05 }),                          // 主题：五声音阶
+    // —— v18.4：全按钮音效预设 ——
+    click: () => _tone({ f: 880, f2: 640, t: .06, type: 'triangle', g: .08 }),                  // 通用点击
+    sw: () => { _tone({ f: 660, f2: 990, t: .09, type: 'triangle', g: .09 }); _noiseHit({ t: .04, g: .04, f: 2600, q: 2 }); }, // 开关拨动
+    menu: () => _tone({ f: 420, f2: 620, t: .08, type: 'sine', g: .06 }),                       // 菜单展开
+    warn: () => _tone({ f: 330, f2: 220, t: .14, type: 'square', g: .05 }),                     // 危险项
+    star: () => _tone({ f: 1318, t: .1, type: 'sine', g: .05 }),                                // 保留绿星
+    coin: () => { _tone({ f: 988, t: .07, type: 'triangle', g: .07 }); _tone({ f: 1319, t: .12, type: 'triangle', g: .07, delay: .06 }); }, // 里程碑
+    tap: () => { _tone({ f: 190, f2: 90, t: .07, g: .1 }); _noiseHit({ t: .03, g: .05, f: 2000, q: 1 }); }, // v18.9：台球撞壁
   };
   const _sndBtn = document.getElementById('snd');
   if (_sndBtn) {
@@ -1477,16 +1665,54 @@
       if (!_muted) SFX.tick(6);
     });
   }
+  // v18.4 模块①b：音量滑条 —— 调 SFX 总增益，持久化 dyhlf_vol
+  const _volSl = document.getElementById('dy-vol');
+  if (_volSl) {
+    _volSl.value = String(Math.round(_vol * 100));
+    _volSl.addEventListener('input', () => {
+      _vol = (+_volSl.value) / 100;
+      try { localStorage.setItem('dyhlf_vol', String(_volSl.value)); } catch (e) {}
+      const _vstep = Math.round(_vol * 20);
+      if (_vstep !== (_volSl._lastStep || -1)) { _volSl._lastStep = _vstep; _reFx(_volSl, 'tk'); SFX.tick(_vstep); } // v19.0：按步进触发，杜绝连发音
+      const vr = _volSl.getBoundingClientRect();
+      _spawnParts(1, vr.left + (vr.width - 13) * (+_volSl.value / 100) + 6, vr.top + vr.height / 2, 6, _acRgb()); // v18.5 拖动拖尾
+    });
+    _volSl.addEventListener('animationend', () => _volSl.classList.remove('tk'));
+  }
+  // v19.1：音量小图标=静音开关（替代已删的 #snd 按钮）；滑条不调整 2 秒后自动收起只留图标
+  const _volWrap = document.getElementById('dy-volwrap');
+  const _volIcon = document.getElementById('dy-volicon');
+  let _volHideT = null;
+  const _volSyncMute = () => { if (_volWrap) _volWrap.classList.toggle('muted', _muted); };
+  _volSyncMute();
+  if (_volIcon) _volIcon.addEventListener('click', () => {
+    _muted = !_muted;
+    _volSyncMute();
+    try { localStorage.setItem('dyhlf_snd', _muted ? '0' : '1'); } catch (e) {}
+    if (!_muted) SFX.tick(6);
+  });
+  if (_volWrap) {
+    const _volOpen = () => {
+      _volWrap.classList.add('open');
+      clearTimeout(_volHideT);
+      _volHideT = setTimeout(() => { if (!_volSl || !_volSl._dragging) _volWrap.classList.remove('open'); }, 2000);
+    };
+    _volWrap.addEventListener('pointerenter', _volOpen);
+    _volSl.addEventListener('pointerdown', () => { _volSl._dragging = true; _volOpen(); });
+    ['pointerup', 'pointercancel'].forEach(ev => _volSl.addEventListener(ev, () => { _volSl._dragging = false; _volOpen(); }));
+    _volSl.addEventListener('input', _volOpen);
+    _disposers.push(() => clearTimeout(_volHideT));
+  }
   // 模块②：粒子层 —— #dy-fx 宿主挂 body、z-index 低于面板；spawnParts 上限 70 防长按堆爆；
   //          stop() 与启动自清理均会 remove 宿主
   const _fxHost = document.createElement('div');
   _fxHost.id = 'dy-fx';
   document.body.appendChild(_fxHost);
   function _spawnParts(n, x, y, spread, rgb) {
-    if (_fxHost.childElementCount > 70) return;
+    if (_prm || _fxHost.childElementCount > 150) return; // v18.5：用户授权吃显卡，上限翻倍
     for (let i = 0; i < n; i++) {
       const p = document.createElement('i'), sz = 2 + Math.random() * 3.5;
-      const c = Math.random() < .28 ? '255,255,255' : (rgb || '255,59,92');
+      const c = Math.random() < .28 ? '255,255,255' : (rgb || _acRgb()); // v18.4：兜底色跟主题，不再写死红
       p.style.cssText = `left:${x + Math.random() * spread - spread / 2}px;top:${y}px;width:${sz}px;height:${sz}px;background:rgb(${c});box-shadow:0 0 ${sz * 2}px rgba(${c},.8)`;
       const dx = (Math.random() - .5) * 26, dy = 36 + Math.random() * 66, dur = .65 + Math.random() * .5;
       p.animate([
@@ -1496,6 +1722,86 @@
       ], { duration: dur * 1000, easing: 'cubic-bezier(.3,.4,.6,1)' }).onfinish = () => p.remove();
       _fxHost.appendChild(p);
     }
+  }
+  // —— v18.4 新粒子：上升星屑 / 里程碑爆彩（颜色读参，全部一次性 WAAPI，onfinish 自删）——
+  function _spawnRise(n, x, y, rgb) {
+    if (_prm || _fxHost.childElementCount > 150) return; // v18.5：上限同步翻倍
+    for (let i = 0; i < n; i++) {
+      const p = document.createElement('i'), sz = 2.5 + Math.random() * 3;
+      p.style.cssText = `left:${x + (Math.random() - .5) * 30}px;top:${y}px;width:${sz}px;height:${sz}px;background:rgb(${rgb});box-shadow:0 0 ${sz * 2}px rgba(${rgb},.8)`;
+      const dx = (Math.random() - .5) * 34, dy = -(30 + Math.random() * 55), dur = .6 + Math.random() * .45;
+      p.animate([
+        { transform: 'translate(0,0) scale(.6)', opacity: 0 },
+        { transform: `translate(${dx * .3}px,${dy * .4}px) scale(1)`, opacity: .95, offset: .3 },
+        { transform: `translate(${dx}px,${dy}px) scale(.35)`, opacity: 0 }
+      ], { duration: dur * 1000, easing: 'cubic-bezier(.25,.5,.5,1)' }).onfinish = () => p.remove();
+      _fxHost.appendChild(p);
+    }
+  }
+  function _fxStars(el, red) {
+    if (!el || _prm) return;
+    const r = el.getBoundingClientRect();
+    _spawnRise(red ? 4 : 6, r.left + r.width * (.3 + Math.random() * .4), r.top + 6, red ? '255,92,122' : '61,232,160');
+  }
+  function _confetti() {
+    if (_prm) return;
+    try { SFX.coin(); } catch (e) {}
+    const r = panel.getBoundingClientRect();
+    const cols = ['61,232,160', '255,197,61', '90,176,255', '255,111,168', '255,255,255'];
+    for (let i = 0; i < 60; i++) { // v18.5：爆彩翻倍
+      const p = document.createElement('i'), sz = 2.5 + Math.random() * 4;
+      const rgb = cols[i % cols.length];
+      p.style.cssText = `left:${r.left + r.width / 2 + (Math.random() - .5) * 60}px;top:${r.top + 8}px;width:${sz}px;height:${sz}px;background:rgb(${rgb});box-shadow:0 0 ${sz * 2}px rgba(${rgb},.85)`;
+      const dx = (Math.random() - .5) * 190, dy = 50 + Math.random() * 120, dur = .8 + Math.random() * .6;
+      p.animate([
+        { transform: 'translate(0,-6px) scale(.5)', opacity: 0 },
+        { transform: `translate(${dx * .35}px,${dy * .25 - 18}px) scale(1.1)`, opacity: 1, offset: .28 },
+        { transform: `translate(${dx}px,${dy}px) scale(.4)`, opacity: 0 }
+      ], { duration: dur * 1000, easing: 'cubic-bezier(.25,.46,.45,.94)' }).onfinish = () => p.remove();
+      _fxHost.appendChild(p);
+    }
+  }
+  function _floatUp(el, txt) {
+    if (_prm) return;
+    try {
+      const cell = el.parentElement; if (!cell) return;
+      const f = document.createElement('b');
+      f.className = 'fl'; f.textContent = txt;
+      cell.appendChild(f);
+      setTimeout(() => f.remove(), 700);
+    } catch (e) {}
+  }
+  // —— v18.5 新增：全屏彩带雨 / 能量线判定闪烁 / 主题点波纹（全部一次性 WAAPI，GPU 合成）——
+  function _ribbonRain() {
+    if (_prm) return;
+    const cols = ['61,232,160', '255,197,61', '90,176,255', '255,111,168', '255,92,122'];
+    for (let i = 0; i < 40; i++) {
+      const p = document.createElement('i'), w = 3 + Math.random() * 3, h = 8 + Math.random() * 8;
+      const rgb = cols[i % cols.length];
+      p.style.cssText = `left:${Math.random() * 100}vw;top:-20px;width:${w}px;height:${h}px;border-radius:1.5px;background:rgb(${rgb});box-shadow:0 0 6px rgba(${rgb},.6)`;
+      const dur = 1 + Math.random() * .8, sway = (Math.random() - .5) * 160, rot = (Math.random() - .5) * 720;
+      p.animate([
+        { transform: 'translate(0,0) rotate(0deg)', opacity: .95 },
+        { transform: `translate(${sway}px,${(innerHeight * .6) | 0}px) rotate(${rot * .6}deg)`, opacity: .9, offset: .6 },
+        { transform: `translate(${sway * 1.4}px,${innerHeight + 30}px) rotate(${rot}deg)`, opacity: 0 }
+      ], { duration: dur * 1000, easing: 'cubic-bezier(.3,.4,.6,1)' }).onfinish = () => p.remove();
+      _fxHost.appendChild(p);
+    }
+  }
+  function _energyFlash() {
+    try { panel.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(1.9)', offset: .25 }, { filter: 'brightness(1)' }], { duration: 300, easing: 'ease-out', pseudoElement: '::after' }); } catch (e) {}
+  }
+  function _themeRipple(x, y, rgb) {
+    if (_prm) return;
+    const pr = panel.getBoundingClientRect();
+    const z = parseFloat(panel.style.zoom) || 1; // v19.3：面板缩放≠1 时本地坐标要除回 zoom，否则波纹错位
+    const rp = document.createElement('span');
+    rp.style.cssText = `position:absolute;left:${(x - pr.left) / z}px;top:${(y - pr.top) / z}px;width:${14 / z}px;height:${14 / z}px;border-radius:50%;border:2px solid rgba(${rgb},.7);transform:translate(-50%,-50%) scale(.4);pointer-events:none`;
+    panel.appendChild(rp);
+    rp.animate([
+      { transform: 'translate(-50%,-50%) scale(.4)', opacity: .9 },
+      { transform: 'translate(-50%,-50%) scale(9)', opacity: 0 }
+    ], { duration: 480, easing: 'cubic-bezier(.2,.7,.4,1)' }).onfinish = () => rp.remove();
   }
   // 模块③：解压状态卡 —— pointerdown 果冻挤压（先 cancel 旧的再播）+ .rp 涟漪 + pop 音；
   //          纯解压交互，不绑任何引擎行为
@@ -1520,6 +1826,9 @@
       _stCard.appendChild(rp); setTimeout(() => rp.remove(), 580);
       SFX.pop();
     });
+    // 【用户裁定·程序说明】v18.5：状态卡是纯解压小卡片——只许果冻挤压/涟漪/音效，
+    // 严禁绑定播放暂停、跳转或任何影响视频的行为（v18.4 曾绑过"点击=播放暂停"，实测点卡片
+    // 会把视频停了，已按用户要求移除）。往后迭代也不许在此卡上挂任何视频控制逻辑。
   }
   // 模块④：滑块撞击与微反馈接线 —— 追加监听，原 input 处理（applyThreshold/paintSlider/showBub）不动。
   //          过档：拇指挤压(dyThumbTick)/刻度闪(dyTickF)/值芯片弹跳(dyVlPop) + tick 音；
@@ -1536,20 +1845,64 @@
     const rgb = _acRgb();
     const base = getComputedStyle(panel).boxShadow;
     panel.animate([
-      { transform: 'translateX(0) rotate(0deg) scale(1)', boxShadow: base, easing: 'cubic-bezier(.3,.9,.4,1)' },
-      { transform: `translateX(${s * 13}px) rotate(${s * .6}deg) scale(1.008)`, boxShadow: base + `,0 0 48px rgba(${rgb},.55)`, offset: .13, easing: 'ease-in-out' },
-      { transform: `translateX(${s * -9}px) rotate(${s * -.38}deg) scale(1)`, boxShadow: base + `,0 0 32px rgba(${rgb},.32)`, offset: .34, easing: 'ease-in-out' },
-      { transform: `translateX(${s * 5.5}px)`, offset: .55, easing: 'ease-in-out' },
-      { transform: `translateX(${s * -2.5}px)`, offset: .75, easing: 'ease-in-out' },
-      { transform: 'translateX(0)' }
-    ], { duration: 500 });
+      { transform: 'translateX(0) scale(1)', boxShadow: base, easing: 'cubic-bezier(.3,.9,.4,1)' },
+      { transform: `translateX(${s * 13}px) scale(1.06,.86)`, boxShadow: base + `,0 0 48px rgba(${rgb},.55)`, offset: .13, easing: 'ease-in-out' },
+      { transform: `translateX(${s * -9}px) scale(.95,1.07)`, boxShadow: base + `,0 0 32px rgba(${rgb},.32)`, offset: .34, easing: 'ease-in-out' },
+      { transform: `translateX(${s * 5.5}px) scale(1.02,.97)`, offset: .55, easing: 'ease-in-out' },
+      { transform: `translateX(${s * -2.5}px) scale(.99,1.015)`, offset: .75, easing: 'ease-in-out' },
+      { transform: 'translateX(0) scale(1)' }
+    ], { duration: 500 }); // v18.5：震动+果冻挤压回弹一体（用户选"全部都要"）
     // 能量线随撞击爆闪（仅运行态可见，::after 伪元素动画；旧引擎不支持 pseudoElement 时静默降级）
     try {
       panel.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(2.4)', offset: .2 }, { filter: 'brightness(1)' }], { duration: 460, easing: 'ease-out', pseudoElement: '::after' });
     } catch (e) {}
-    const tr = $.sl.getBoundingClientRect();
-    _spawnParts(9, dir === 'r' ? tr.right - 6 : tr.left + 6, tr.top + tr.height / 2, 30, rgb);
+    // v19.3：撞击粒子已按用户要求移除（面板缩放后坐标换算不准、位置对不上）；彩带雨保留
+    _ribbonRain();
   }
+  // —— v19.6：拉满海浪——光带一波接一波从左往右推过阈值区，按住不松浪不停 ——
+  let _waveRaf = null, _waveLast = 0;
+  function _waveTick(now) {
+    if (_stopped) { _waveRaf = null; return; }
+    if (!_slDragging || +$.sl.value !== THRESHOLD_PRESETS.length - 1) { _waveRaf = null; return; } // 松手/离端即停
+    if (now - _waveLast > 280) {
+      _waveLast = now;
+      const s = document.createElement('span');
+      s.className = 'dysweep';
+      _slwrap.appendChild(s);
+      const w = _slwrap.getBoundingClientRect().width;
+      s.animate([
+        { transform: 'translateX(-70px) scaleY(.7)', opacity: 0 },
+        { transform: `translateX(${w * .4}px) scaleY(1)`, opacity: .95, offset: .45 },
+        { transform: `translateX(${w + 70}px) scaleY(.7)`, opacity: 0 }
+      ], { duration: 620, easing: 'cubic-bezier(.35,.3,.45,.8)' }).onfinish = () => s.remove();
+    }
+    _waveRaf = requestAnimationFrame(_waveTick);
+  }
+  function _lightSweep() {
+    if (_prm) return;
+    if (!_waveRaf) { _waveLast = 0; _waveRaf = requestAnimationFrame(_waveTick); }
+  }
+  // —— v19.4：全按钮点击波纹（从点击处荡开一圈色环；本地坐标按面板 zoom 换算）——
+  function _btnRing(el, e) {
+    if (_prm || !el) return;
+    try {
+      const r = el.getBoundingClientRect();
+      const z = panel.contains(el) ? (parseFloat(panel.style.zoom) || 1) : 1;
+      const cx = (e && e.clientX ? e.clientX : r.left + r.width / 2), cy = (e && e.clientY ? e.clientY : r.top + r.height / 2);
+      const rp = document.createElement('span');
+      rp.style.cssText = `position:absolute;left:${(cx - r.left) / z}px;top:${(cy - r.top) / z}px;width:${14 / z}px;height:${14 / z}px;border-radius:50%;border:2px solid rgba(${_acRgb()},.7);transform:translate(-50%,-50%) scale(.4);pointer-events:none`;
+      el.appendChild(rp);
+      rp.animate([
+        { transform: 'translate(-50%,-50%) scale(.4)', opacity: .9 },
+        { transform: 'translate(-50%,-50%) scale(9)', opacity: 0 }
+      ], { duration: 480, easing: 'cubic-bezier(.2,.7,.4,1)' }).onfinish = () => rp.remove(); // v19.5：与调色盘波纹同款
+    } catch (err) {}
+  }
+  onDoc('click', e => {
+    if (_prm || syntheticDepth > 0) return;
+    const el = e.target && e.target.closest && e.target.closest('.sw,.mbtn,.menu .mi,.gok,.nm>div,#dy-fab,#dy-volicon'); // v19.7：状态卡与四策略芯片不叠波纹（自带果冻/粒子/音效）
+    if (el) _btnRing(el, e);
+  }, true);
   function _startRumble() {
     if (_rumbleAni) return;
     _rumbleAni = panel.animate([
@@ -1570,14 +1923,22 @@
   }
   function _scheduleRumble() {
     clearTimeout(_rumblePend);
-    _rumblePend = setTimeout(() => { if (_slDragging && (+$.sl.value === 0 || +$.sl.value === 9)) _startRumble(); }, 560); // 等撞击动画演完再接管
+    _rumblePend = setTimeout(() => { if (_slDragging && +$.sl.value === 0) _startRumble(); }, 560); // v19.4：微震只在最小端
   }
-  $.sl.addEventListener('pointerdown', () => { _slDragging = true; if (+$.sl.value === 0 || +$.sl.value === 9) _scheduleRumble(); });
+  $.sl.addEventListener('pointerdown', () => { _slDragging = true; if (+$.sl.value === 0) _scheduleRumble(); }); // v19.4：微震只在最小端
   ['pointerup', 'pointercancel'].forEach(ev => $.sl.addEventListener(ev, () => { _slDragging = false; _stopRumble(); }));
   $.sl.addEventListener('input', () => {
-    const v = +$.sl.value, atEdge = (v === 0 || v === 9), wasEdge = (_lastSl === 0 || _lastSl === 9);
-    if (v !== _lastSl) { _reFx($.sl, 'tk'); _reFx(_slwrap, 'tk'); _reFx($.slv, 'pop'); SFX.tick(v); }
-    if (atEdge && !wasEdge) { _impactFx(v === 9 ? 'r' : 'l'); _reFx($.sl, 'imp'); SFX.hit(); }
+    const _maxI = THRESHOLD_PRESETS.length - 1;
+    let _lastTickAt = 0; // v19.2：过档音节流
+    const v = +$.sl.value, atEdge = (v === 0 || v === _maxI), wasEdge = (_lastSl === 0 || _lastSl === _maxI);
+    if (v !== _lastSl) { _reFx($.sl, 'tk'); _reFx(_slwrap, 'tk'); _reFx($.slv, 'pop');
+      const _tn = performance.now();
+      if (_tn - _lastTickAt > 130) { _lastTickAt = _tn; SFX.tick(v); } // v19.2：130ms 节流，连拖不再突突突
+      if (_slDragging) { const _sr = $.sl.getBoundingClientRect(); _spawnParts(2, _sr.left + 9 + (v / _maxI) * (_sr.width - 18), _sr.top + _sr.height / 2, 10, _acRgb()); } } // v18.4 拖动拖尾（v19.2：分母随档位数）
+    if (atEdge && !wasEdge) {
+      if (v === _maxI) { _lightSweep(); _impactFx('r'); SFX.hit(); } // v19.5：拉满→流光+单次撞击震（不持续）
+      else { _impactFx('l'); _reFx($.sl, 'imp'); SFX.hit(); } // 拉到最小→左端撞击
+    }
     if (atEdge && _slDragging) _scheduleRumble(); // 撞到尽头且没松手 → 先撞后嗡
     if (!atEdge) _stopRumble();
     _lastSl = v;
@@ -1585,6 +1946,43 @@
   $.sl.addEventListener('animationend', () => { $.sl.classList.remove('tk', 'imp'); });
   _slwrap.addEventListener('animationend', () => { _slwrap.classList.remove('tk'); });
   $.slv.addEventListener('animationend', () => { $.slv.classList.remove('pop'); });
+  // v19.2：白球/弹弓/台球整链已按用户要求移除，阈值滑条回归原生拖动（尽头撞击+微震接线恢复生效）
+  function _launchBall(vx) {
+    if (_ballRaf) cancelAnimationFrame(_ballRaf);
+    const r0 = _trackRect();
+    const wr = _slwrap.getBoundingClientRect();
+    const minC = 9, maxC = wr.width - 9;
+    let x = parseFloat(_ball.style.left) || (minC + maxC) / 2;
+    let last = performance.now();
+    const step = now => {
+      if (_stopped) { try { _ball.remove(); _band.remove(); } catch (err) {} _ballRaf = null; return; }
+      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      x += vx * dt;
+      let hitWall = 0;
+      if (x < minC) { x = minC; vx = -vx * .72; hitWall = 1; }
+      else if (x > maxC) { x = maxC; vx = -vx * .72; hitWall = -1; }
+      vx *= (1 - .9 * dt);
+      _ball.style.left = x + 'px';
+      if (hitWall) {
+        const wx = hitWall < 0 ? wr.left + 9 : wr.right - 9;
+        SFX.tap(); _spawnParts(4, wx, wr.top + wr.height / 2, 12, _acRgb());
+        panel.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${hitWall * 2.5}px)` }, { transform: 'translateX(0)' }], { duration: 130, easing: 'ease-out' });
+      }
+      const pi = Math.max(0, Math.min(_maxI(), Math.round((x - 9) / (maxC - 9) * _maxI())));
+      $.slv.textContent = '≥' + fmtThreshold(THRESHOLD_PRESETS[pi]); // 飞行中芯片实时预览
+      if (Math.abs(vx) < 60) {
+        _ball.animate([{ left: x + 'px' }, { left: _notchLX(pi) + 'px' }], { duration: 160, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => {
+          _setNotch(pi); // 球停在哪档，阈值就是哪档
+          showBub();
+        };
+        _ballRaf = null;
+        return;
+      }
+      _ballRaf = requestAnimationFrame(step);
+    };
+    _ballRaf = requestAnimationFrame(step);
+    _disposers.push(() => { if (_ballRaf) cancelAnimationFrame(_ballRaf); try { _ball.remove(); _band.remove(); } catch (err) {} });
+  }
   // ══════════ v18.2 UI 动效模块结束 ══════════
 
   function saveFabPos() {
@@ -1716,6 +2114,7 @@
     }else{
       clearTimeout(_closeT); panel.classList.remove('closing');
       panel.style.display='block';
+      _reFx(panel, 'casc'); // v18.4：每次打开重播级联
       placePanel();
       _panelOpen=true;
       setTimeout(_measurePanel, 50);
@@ -1761,6 +2160,8 @@
     $.rfem.setAttribute('aria-pressed', String(!!cfg.keepFemale));
     $.rmus.setAttribute('aria-pressed', String(!!cfg.keepMusic));
     $.rj.setAttribute('aria-pressed', String(!!cfg.autoJ));
+    panel.classList.toggle('running', cfg.enabled); // v18.4：运行态类（:has 不支持时的兜底，能量线/呼吸点/脉冲用）
+    fab.classList.toggle('running', cfg.enabled); // v18.5：FAB 光晕呼吸（运行态）
   }
   // v14.1：脏标记保留（避免每次 tick 都刷 UI），但所有 state 变更处都补了 markDirty()
   let _dirty = true;
@@ -1771,6 +2172,8 @@
   _disposers.push(() => { _cntToks.clear(); });
   function countUp(el, to){
     const from = parseInt(el.textContent, 10) || 0;
+    if (to > from && !_prm) _floatUp(el, '+' + (to - from)); // v18.4：+1 浮字（v18.9 扩到四格）
+    if (to > from) _reFx(el, 'flip'); // v18.5：数字翻牌
     if (from === to || document.hidden || typeof requestAnimationFrame !== 'function' || !el.isConnected) {
       el.textContent = to;
       return;
@@ -1788,6 +2191,7 @@
   }
   // v16.0：状态卡文案进出场重触发（仅内容变化时，避免定时器空刷造成闪烁）
   let _lastSm = null, _lastSs = null;
+  let _lastFxV = null, _lastMile = -1; // v18.4：判定反馈/里程碑去重
   function setSt(cls, m, s){
     if ($.sm.className !== cls || $.sm.textContent !== m || _lastSm === null) {
       $.sm.className = cls;
@@ -1813,6 +2217,21 @@
     $.tNow.textContent = '本次 ' + fmtDur(Math.floor(_visibleMs/1000));
     $.tSave.innerHTML = '已省 今日 <span class="hi">' + fmtDur(_timeStats.today) + '</span> · 累计 ' + fmtDur(_timeStats.total);
     const r=state.lastResult||{};
+    // v18.4：判定反馈粒子（绿星=保留类/红粒=跳过类，仅判定变化时）+ 每 50 跳里程碑爆彩 —— UI 层，引擎零改动
+    if (r.verdict && r.verdict !== _lastFxV) {
+      _lastFxV = r.verdict;
+      _energyFlash(); // v18.5：每判定一次，能量线闪一下（看清引擎在干活）
+      // v18.6：判定星屑粒子与星音已按用户要求移除（每刷一个视频弹一次太吵）；_fxStars 函数保留备用
+    }
+    if (state.skipped !== _lastMile) {
+      if (state.skipped > 0 && state.skipped % 50 === 0) _confetti();
+      _lastMile = state.skipped;
+    }
+    const _tot = state.kept + state.skipped + state.liveSkipped + state.femaleKept + 1; // v18.5：迷你进度弧占比
+    $.nk.parentElement.style.setProperty('--pct', Math.min(100, Math.round(state.kept / _tot * 100)));
+    $.ns.parentElement.style.setProperty('--pct', Math.min(100, Math.round(state.skipped / _tot * 100)));
+    $.nl.parentElement.style.setProperty('--pct', Math.min(100, Math.round(state.liveSkipped / _tot * 100)));
+    $.nf.parentElement.style.setProperty('--pct', Math.min(100, Math.round(state.femaleKept / _tot * 100)));
     // v16.6 [4]：「已停止」最优先——否则空格暂停后关运行开关，面板恒显「暂停」
     //（pollPauseState 因 cfg.enabled=false 停跑，不再纠偏）；已停止/主页副文案补全（v16.6 [11]）
     if(!cfg.enabled){setSt('m cy','已停止','静默中 · 打开开关恢复');return;}
@@ -1847,6 +2266,79 @@
   $.rfem.onclick=()=>toggleOpt('keepFemale',true);
   $.rmus.onclick=()=>toggleOpt('keepMusic',true);
   $.rj.onclick=()=>toggleOpt('autoJ',false);
+  // ═══ v18.4：全按钮音效 + 统计格解释（追加监听，不改原 onclick 逻辑）═══
+  [['run','sw'],['rlive','click'],['rfem','click'],['rmus','click'],['rj','click']].forEach(p => {
+    const b = document.getElementById(p[0]);
+    if (b) b.addEventListener('click', () => SFX[p[1]]());
+  });
+  const _moreBtnSfx = document.getElementById('dy-more-btn');
+  if (_moreBtnSfx) _moreBtnSfx.addEventListener('click', () => SFX.menu());
+  const _gokSfx = document.getElementById('dy-guide-ok');
+  if (_gokSfx) _gokSfx.addEventListener('click', () => SFX.click());
+  [['dy-restart','click'],['dy-cls','warn']].forEach(p => {
+    const m = document.getElementById(p[0]);
+    if (m) m.addEventListener('click', () => SFX[p[1]]());
+  });
+  if (fab) fab.addEventListener('click', () => { if (!draggedThisPress || curPress !== pressId) SFX.tick(2); });
+  const _statTips = { nk: '脚本判定保留的视频数', ns: '自动跳过的低赞/购物/男频视频数', nl: '跳过的直播场次', nf: '命中女生词库而保留的视频数' };
+  ['nk','ns','nl','nf'].forEach(id => { const c = document.getElementById(id); if (c && c.parentElement) c.parentElement.title = _statTips[id]; });
+  // ═══ v18.6：统计四格点击解压反馈（按下果冻+pop音，可连点；无任何功能含义）═══
+  const _statRgb = { nk: '61,232,160', ns: '255,92,122', nl: '90,176,255', nf: '255,111,168' };
+  ['nk', 'ns', 'nl', 'nf'].forEach(id => {
+    const c = document.getElementById(id);
+    if (!c || !c.parentElement) return;
+    const cell = c.parentElement;
+    cell.addEventListener('pointerdown', () => {
+      if (_prm) return;
+      cell.animate([
+        { transform: 'scale(1,1)', easing: 'ease-out' },
+        { transform: 'scale(.9,1.1)', offset: .3, easing: 'ease-out' },
+        { transform: 'scale(1.04,.95)', offset: .6 },
+        { transform: 'scale(1,1)' }
+      ], { duration: 320 });
+      const r = cell.getBoundingClientRect();
+      _spawnRise(2, r.left + r.width / 2, r.top + 4, _statRgb[id]);
+      SFX.click();
+    });
+    cell.addEventListener('click', () => {
+      // v18.9：点一下 +1（计入对应计数，数字滚动+浮字，连点解压；纯 UI 计数，不影响判定）
+      if (id === 'nk') state.kept++;
+      else if (id === 'ns') state.skipped++;
+      else if (id === 'nl') state.liveSkipped++;
+      else if (id === 'nf') state.femaleKept++;
+      markDirty(); render();
+    });
+  });
+  // ═══ v18.5：四策略芯片解压反馈（用户拍板）——每次按下果冻挤压+小粒子并发+音效，开关功能不变；
+  //     按下动画是果冻回弹不是开关翻转；1 秒内连点同芯片≥3次触发连击彩蛋 ═══
+  const _chipCombo = new Map();
+  ['rlive', 'rfem', 'rmus', 'rj'].forEach(id => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.addEventListener('pointerdown', () => {
+      if (_prm) return;
+      b.animate([
+        { transform: 'scale(1,1)', easing: 'ease-out' },
+        { transform: 'scale(.92,1.08) translateY(1px)', offset: .25, easing: 'ease-out' },
+        { transform: 'scale(1.05,.94)', offset: .5, easing: 'ease-out' },
+        { transform: 'scale(.98,1.02)', offset: .75 },
+        { transform: 'scale(1,1)' }
+      ], { duration: 380 });
+      const r = b.getBoundingClientRect();
+      _spawnRise(3, r.left + r.width / 2, r.top + r.height / 2, _acRgb());
+    });
+    b.addEventListener('click', () => {
+      const now = performance.now();
+      const combo = (now - (_chipCombo.get(id) || 0) < 1000) ? ((_chipCombo.get(id + 'c') || 1) + 1) : 1;
+      _chipCombo.set(id, now); _chipCombo.set(id + 'c', combo);
+      if (combo >= 3) {
+        _chipCombo.set(id + 'c', 0);
+        try { SFX.coin(); } catch (e) {}
+        const r = b.getBoundingClientRect();
+        ['61,232,160', '255,197,61', '90,176,255'].forEach((rgb, i) => _spawnRise(5, r.left + r.width * (.25 + i * .25), r.top, rgb));
+      }
+    });
+  });
   // v16.0 主题三同步（§4/§5.9）：
   //   ① load 路径旧值迁移 '255,23,68'→'255,59,92'、'21,101,255'→'78,155,255' + 脏值防御
   //     （'#'+c 历史缺陷产生的脏值映射默认主题）；
@@ -1873,7 +2365,10 @@
   let _savedTheme = null;
   try { _savedTheme = localStorage.getItem('dyhlf_theme'); } catch(e) {}
   _applyTheme(_savedTheme || _THEME_DEFAULT, false); // load 路径：旧值自动迁移 + 脏值防御
-  document.querySelectorAll('#tm i').forEach(el => el.onclick = () => _applyTheme(el.dataset.c, true));
+  document.querySelectorAll('#tm i').forEach(el => el.onclick = e => {
+    _applyTheme(el.dataset.c, true);
+    try { const r = el.getBoundingClientRect(); _themeRipple(r.left + r.width / 2, r.top + r.height / 2, el.dataset.c); } catch (err) {}
+  }); // v18.5：换主题从点位荡开一圈色波纹
   // v18.2 模块⑤：主题即时预览 —— 悬停立即应用主题色 + 五声音阶（随色阶走），移出还原到已保存主题；
   //                原点击保存逻辑（上方 onclick → persist=true）保持不变
   const _THEME_NOTES = [523.25, 587.33, 659.25, 783.99, 880, 1046.5]; // C D E G A C'
@@ -2002,15 +2497,17 @@
     verEl.style.cursor = 'pointer';
     verEl.onclick = _dyRestart;
     const tEl = panel.querySelector('.hd .t');
-    tEl.style.cursor = 'pointer';
-    let _px = 0, _py = 0, _down = false;
-    tEl.addEventListener('mousedown', e => { _down = true; _px = e.clientX; _py = e.clientY; });
-    tEl.addEventListener('mouseup', e => {
-      if (!_down) return;
-      _down = false;
-      if (Math.hypot(e.clientX - _px, e.clientY - _py) > 6) return;
-      _dyRestart();
-    });
+    if (tEl) { // v18.9：标题已换音量条，可能不存在
+      tEl.style.cursor = 'pointer';
+      let _px = 0, _py = 0, _down = false;
+      tEl.addEventListener('mousedown', e => { _down = true; _px = e.clientX; _py = e.clientY; });
+      tEl.addEventListener('mouseup', e => {
+        if (!_down) return;
+        _down = false;
+        if (Math.hypot(e.clientX - _px, e.clientY - _py) > 6) return;
+        _dyRestart();
+      });
+    }
   })();
   sync();render();
   const _restoreUI = () => {
@@ -2039,6 +2536,7 @@
       clearTimeout(_confirmT);    // v16.0：清除确认还原定时器
       clearInterval(_pathT);      // v16.5 ③：100ms 路径监听
       _pinTimers.forEach(clearTimeout); _pinTimers.length = 0; // v16.6 [10]：FAB 吸附重试定时器补清
+      if (_waveRaf) { cancelAnimationFrame(_waveRaf); _waveRaf = null; } // v19.6：海浪循环停
       // v17.1：位置落盘防抖收尾——停用/重启即刷最终位置（此刻 panel 尚未 remove，读到的是当前值）
       clearTimeout(_ppT);
       try { localStorage.setItem('dyhlf_pp', JSON.stringify({l:panel.style.left,t:panel.style.top})); } catch(e){}
